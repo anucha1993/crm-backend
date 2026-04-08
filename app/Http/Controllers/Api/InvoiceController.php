@@ -1,0 +1,293 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Models\CompanySetting;
+use App\Models\Invoice;
+use App\Models\InvoiceItem;
+use App\Models\Order;
+use App\Models\PaymentLog;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Laravel\Sanctum\PersonalAccessToken;
+use Mpdf\Mpdf;
+
+class InvoiceController extends Controller
+{
+    public function index(Request $request): JsonResponse
+    {
+        $query = Invoice::with(['order:id,order_number', 'customer:id,name,code', 'creator:id,name']);
+
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('invoice_number', 'like', "%{$search}%")
+                  ->orWhereHas('order', fn ($oq) => $oq->where('order_number', 'like', "%{$search}%"))
+                  ->orWhereHas('customer', fn ($cq) => $cq->where('name', 'like', "%{$search}%"));
+            });
+        }
+
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
+
+        $invoices = $query->orderBy('created_at', 'desc')
+            ->paginate($request->input('per_page', 10));
+
+        return response()->json($invoices);
+    }
+
+    public function show(Invoice $invoice): JsonResponse
+    {
+        $invoice->load([
+            'order.customer', 'order.shippingAddress',
+            'customer', 'shippingAddress',
+            'items.product.sizes', 'items.orderItem',
+            'creator:id,name', 'canceller:id,name',
+        ]);
+
+        return response()->json(['invoice' => $invoice]);
+    }
+
+    public function store(Request $request, Order $order): JsonResponse
+    {
+        // Validate order is fully paid
+        if ((float) $order->remaining_amount > 0) {
+            return response()->json([
+                'message' => 'ไม่สามารถออกใบกำกับภาษีได้ คำสั่งซื้อยังชำระเงินไม่ครบ',
+            ], 422);
+        }
+
+        if ($order->status === 'cancelled') {
+            return response()->json([
+                'message' => 'ไม่สามารถออกใบกำกับภาษีได้ คำสั่งซื้อถูกยกเลิก',
+            ], 422);
+        }
+
+        // Check if order already has an active invoice
+        $existingInvoice = Invoice::where('order_id', $order->id)
+            ->where('status', 'issued')
+            ->first();
+
+        if ($existingInvoice) {
+            return response()->json([
+                'message' => 'คำสั่งซื้อนี้มีใบกำกับภาษีอยู่แล้ว: ' . $existingInvoice->invoice_number,
+            ], 422);
+        }
+
+        $request->validate([
+            'notes' => 'nullable|string|max:1000',
+        ]);
+
+        $order->load(['items.product', 'customer', 'shippingAddress']);
+
+        $invoice = DB::transaction(function () use ($request, $order) {
+            $invoice = Invoice::create([
+                'invoice_number' => Invoice::generateNumber(),
+                'order_id' => $order->id,
+                'customer_id' => $order->customer_id,
+                'customer_address_id' => $order->customer_address_id,
+                'status' => 'issued',
+                'issue_date' => now()->toDateString(),
+                'subtotal' => $order->subtotal,
+                'discount_type' => $order->discount_type,
+                'discount_value' => $order->discount_value,
+                'discount_amount' => $order->discount_amount,
+                'vat_rate' => $order->vat_rate,
+                'vat_amount' => $order->vat_amount,
+                'total' => $order->total,
+                'notes' => $request->notes,
+                'created_by' => $request->user()->id,
+            ]);
+
+            // Copy items from order
+            foreach ($order->items as $item) {
+                InvoiceItem::create([
+                    'invoice_id' => $invoice->id,
+                    'order_item_id' => $item->id,
+                    'product_id' => $item->product_id,
+                    'description' => $item->description,
+                    'quantity' => $item->quantity,
+                    'unit' => $item->unit,
+                    'unit_price' => $item->unit_price,
+                    'thickness' => $item->thickness,
+                    'length' => $item->length,
+                    'amount' => $item->amount,
+                    'sort_order' => $item->sort_order,
+                ]);
+            }
+
+            // Log
+            PaymentLog::create([
+                'order_id' => $order->id,
+                'action' => 'invoice_created',
+                'summary' => 'ออกใบกำกับภาษี ' . $invoice->invoice_number,
+                'details' => [
+                    'invoice_id' => $invoice->id,
+                    'invoice_number' => $invoice->invoice_number,
+                    'total' => (float) $invoice->total,
+                ],
+                'user_id' => $request->user()->id,
+            ]);
+
+            return $invoice;
+        });
+
+        $invoice->load(['items.product.sizes', 'order', 'customer', 'creator:id,name']);
+
+        return response()->json(['invoice' => $invoice], 201);
+    }
+
+    public function cancel(Request $request, Invoice $invoice): JsonResponse
+    {
+        if ($invoice->status !== 'issued') {
+            return response()->json(['message' => 'ใบกำกับภาษีนี้ไม่สามารถยกเลิกได้'], 422);
+        }
+
+        $request->validate([
+            'reason' => 'required|string|max:500',
+        ]);
+
+        $invoice->update([
+            'status' => 'cancelled',
+            'cancelled_by' => $request->user()->id,
+            'cancelled_at' => now(),
+            'cancel_reason' => $request->reason,
+        ]);
+
+        PaymentLog::create([
+            'order_id' => $invoice->order_id,
+            'action' => 'invoice_cancelled',
+            'summary' => 'ยกเลิกใบกำกับภาษี ' . $invoice->invoice_number,
+            'details' => [
+                'invoice_id' => $invoice->id,
+                'reason' => $request->reason,
+            ],
+            'user_id' => $request->user()->id,
+        ]);
+
+        return response()->json(['invoice' => $invoice]);
+    }
+
+    public function exportPdf(Request $request, Invoice $invoice)
+    {
+        $token = $request->query('token');
+        if (!$token) {
+            abort(401, 'Unauthorized');
+        }
+        $accessToken = PersonalAccessToken::findToken($token);
+        if (!$accessToken) {
+            abort(401, 'Unauthorized');
+        }
+
+        $invoice->load(['customer', 'shippingAddress', 'items.product.sizes', 'creator', 'order']);
+
+        $company = CompanySetting::getAll();
+        $isVat = (float) $invoice->vat_rate > 0;
+
+        $logoPath = null;
+        if (!empty($company['logo']) && Storage::disk('public')->exists($company['logo'])) {
+            $logoPath = Storage::disk('public')->path($company['logo']);
+        }
+
+        $buddhistYear = (int) $invoice->issue_date->format('Y') + 543;
+        $issueDate = $invoice->issue_date->format('d/m/') . $buddhistYear;
+        $bahtText = $this->numberToThaiText((float) $invoice->total);
+
+        $qrData = $invoice->invoice_number;
+
+        $html = view('invoices.pdf', compact(
+            'invoice', 'company', 'isVat', 'logoPath', 'issueDate', 'bahtText', 'qrData'
+        ))->render();
+
+        $mpdf = new Mpdf([
+            'mode' => 'utf-8',
+            'format' => 'A4',
+            'default_font' => 'sarabun',
+            'margin_top' => 5,
+            'margin_bottom' => 55,
+            'margin_left' => 8,
+            'margin_right' => 8,
+            'autoLangToFont' => true,
+            'autoScriptToLang' => true,
+            'tempDir' => storage_path('app/mpdf-temp'),
+            'fontDir' => array_merge(
+                (new \Mpdf\Config\ConfigVariables())->getDefaults()['fontDir'],
+                [storage_path('fonts')]
+            ),
+            'fontdata' => array_merge(
+                (new \Mpdf\Config\FontVariables())->getDefaults()['fontdata'],
+                [
+                    'sarabun' => [
+                        'R' => 'Sarabun-Regular.ttf',
+                        'B' => 'Sarabun-Bold.ttf',
+                        'I' => 'Sarabun-Italic.ttf',
+                        'BI' => 'Sarabun-BoldItalic.ttf',
+                    ],
+                ]
+            ),
+        ]);
+
+        $mpdf->SetTitle('ใบกำกับภาษี ' . $invoice->invoice_number);
+        $mpdf->SetAuthor($company['name'] ?? 'CRM');
+        if ($invoice->status === 'cancelled') {
+            $mpdf->SetWatermarkText('ยกเลิก', 0.12);
+            $mpdf->showWatermarkText = true;
+        }
+        $mpdf->WriteHTML($html);
+
+        return response($mpdf->Output('', 'S'), 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="' . $invoice->invoice_number . '.pdf"',
+        ]);
+    }
+
+    private function numberToThaiText(float $num): string
+    {
+        if ($num == 0) return 'ศูนย์บาทถ้วน';
+
+        $digits = ['', 'หนึ่ง', 'สอง', 'สาม', 'สี่', 'ห้า', 'หก', 'เจ็ด', 'แปด', 'เก้า'];
+        $positions = ['', 'สิบ', 'ร้อย', 'พัน', 'หมื่น', 'แสน', 'ล้าน'];
+
+        $convert = function (int $n) use ($digits, $positions): string {
+            if ($n === 0) return '';
+            $str = (string) $n;
+            $result = '';
+            $len = strlen($str);
+            for ($i = 0; $i < $len; $i++) {
+                $d = (int) $str[$i];
+                $pos = $len - $i - 1;
+                if ($d === 0) continue;
+                if ($pos === 1 && $d === 1) { $result .= 'สิบ'; continue; }
+                if ($pos === 1 && $d === 2) { $result .= 'ยี่สิบ'; continue; }
+                if ($pos === 0 && $d === 1 && $len > 1) { $result .= 'เอ็ด'; continue; }
+                $result .= $digits[$d] . $positions[$pos];
+            }
+            return $result;
+        };
+
+        $intPart = (int) floor($num);
+        $decPart = (int) round(($num - $intPart) * 100);
+
+        $text = '';
+        if ($intPart > 999999) {
+            $millions = (int) floor($intPart / 1000000);
+            $remainder = $intPart % 1000000;
+            $text = $convert($millions) . 'ล้าน' . $convert($remainder);
+        } else {
+            $text = $convert($intPart);
+        }
+
+        $text .= 'บาท';
+        if ($decPart > 0) {
+            $text .= $convert($decPart) . 'สตางค์';
+        } else {
+            $text .= 'ถ้วน';
+        }
+
+        return $text;
+    }
+}
