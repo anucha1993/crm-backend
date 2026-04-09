@@ -274,7 +274,52 @@ class QuotationController extends Controller
 
         $quotation->load(['customer.addresses', 'shippingAddress', 'items.product', 'creator', 'updater']);
 
-        return response()->json(['quotation' => $quotation]);
+        // Check related documents and generate warnings
+        $warnings = [];
+        $linkedOrder = Order::where('quotation_id', $quotation->id)->first();
+        if ($linkedOrder) {
+            $warnings[] = [
+                'type' => 'info',
+                'message' => "มีคำสั่งซื้อ {$linkedOrder->order_number} ผูกอยู่ การแก้ไขจะไม่อัพเดทคำสั่งซื้ออัตโนมัติ",
+            ];
+
+            if ((float) $linkedOrder->total !== (float) $quotation->total) {
+                $warnings[] = [
+                    'type' => 'warning',
+                    'message' => "ยอดรวมใบเสนอราคา (" . number_format((float) $quotation->total, 2) . ") ไม่ตรงกับคำสั่งซื้อ (" . number_format((float) $linkedOrder->total, 2) . ")",
+                ];
+            }
+
+            $issuedInvoices = $linkedOrder->invoices()->where('status', 'issued')->pluck('invoice_number');
+            if ($issuedInvoices->count() > 0) {
+                $warnings[] = [
+                    'type' => 'warning',
+                    'message' => "คำสั่งซื้อมีใบกำกับภาษี " . $issuedInvoices->join(', ') . " ที่ออกแล้ว ยอดอาจไม่ตรงกัน",
+                ];
+            }
+
+            $confirmedCount = $linkedOrder->deliveries()->where('status', 'delivered')->count();
+            if ($confirmedCount > 0) {
+                $warnings[] = [
+                    'type' => 'warning',
+                    'message' => "มีใบส่งของที่ยืนยันการส่งแล้ว {$confirmedCount} ใบ",
+                ];
+            }
+
+            $pendingCount = $linkedOrder->deliveries()->whereIn('status', ['pending', 'delivering'])->count();
+            if ($pendingCount > 0) {
+                $warnings[] = [
+                    'type' => 'info',
+                    'message' => "มีใบส่งของที่ยังไม่ยืนยัน {$pendingCount} ใบ กรุณาตรวจสอบจำนวนสินค้า",
+                ];
+            }
+        }
+
+        return response()->json([
+            'quotation' => $quotation,
+            'warnings' => $warnings,
+            'linked_order' => $linkedOrder ? ['id' => $linkedOrder->id, 'order_number' => $linkedOrder->order_number] : null,
+        ]);
     }
 
     public function destroy(Quotation $quotation): JsonResponse
