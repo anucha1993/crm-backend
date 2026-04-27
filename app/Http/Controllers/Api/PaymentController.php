@@ -60,6 +60,8 @@ class PaymentController extends Controller
             'is_deposit' => 'boolean',
             'notes' => 'nullable|string',
             'slip_image' => 'nullable|file|mimes:jpg,jpeg,png|max:5120',
+            'slip_images' => 'nullable|array',
+            'slip_images.*' => 'file|mimes:jpg,jpeg,png|max:5120',
             // Manual transfer fields
             'sender_name' => 'nullable|string|max:255',
             'sender_bank' => 'nullable|string|max:255',
@@ -71,93 +73,28 @@ class PaymentController extends Controller
             'transfer_date' => 'nullable|date',
         ]);
 
-        $payment = DB::transaction(function () use ($request, $order) {
-            $slipPath = null;
-            $slipData = null;
-            $slipRef = null;
-            $slipVerified = false;
-            $slipStatusCode = null;
-            $senderName = $request->sender_name;
-            $senderBank = $request->sender_bank;
-            $senderAccount = $request->sender_account;
-            $receiverName = $request->receiver_name;
-            $receiverBank = $request->receiver_bank;
-            $receiverAccount = $request->receiver_account;
-            $transferAmount = $request->transfer_amount;
-            $transferDate = $request->transfer_date;
+        // Collect slip files: support both single slip_image and multi slip_images[]
+        $slipFilesList = [];
+        if ($request->hasFile('slip_images')) {
+            $slipFilesList = $request->file('slip_images');
+        } elseif ($request->hasFile('slip_image')) {
+            $slipFilesList = [$request->file('slip_image')];
+        }
 
-            // Handle slip image upload and verification
-            $method = $request->input('method');
-            if ($request->hasFile('slip_image') && $method === 'transfer') {
-                $slipPath = $request->file('slip_image')->store('slips', 'public');
+        $method = $request->input('method');
 
-                // Try slip2go verification
-                $slip2go = new Slip2goService();
-                if ($slip2go->isConfigured()) {
-                    try {
-                        $result = $slip2go->verifyByImage($request->file('slip_image'), [
-                            'amount' => $request->amount,
-                        ]);
-                        $slipData = $result;
-                        $slipStatusCode = $result['code'] ?? null;
-
-                        if (isset($result['data'])) {
-                            $slipRef = $result['data']['transRef'] ?? null;
-                            $slipVerified = in_array($slipStatusCode, ['200000', '200200']);
-
-                            // Auto-fill transfer details from slip
-                            if (isset($result['data']['sender'])) {
-                                $senderName = $senderName ?: ($result['data']['sender']['account']['name'] ?? null);
-                                $senderBank = $senderBank ?: ($result['data']['sender']['bank']['name'] ?? null);
-                                $senderAccount = $senderAccount ?: ($result['data']['sender']['account']['bank']['account'] ?? null);
-                            }
-                            if (isset($result['data']['receiver'])) {
-                                $receiverName = $receiverName ?: ($result['data']['receiver']['account']['name'] ?? null);
-                                $receiverBank = $receiverBank ?: ($result['data']['receiver']['bank']['name'] ?? null);
-                                $receiverAccount = $receiverAccount ?: ($result['data']['receiver']['account']['bank']['account'] ?? null);
-                            }
-                            $transferAmount = $transferAmount ?: ($result['data']['amount'] ?? null);
-                            $transferDate = $transferDate ?: ($result['data']['dateTime'] ?? null);
-                        }
-                    } catch (\Throwable $e) {
-                        $slipData = ['code' => 'error', 'message' => $e->getMessage()];
-                        $slipStatusCode = 'error';
-                    }
-                }
+        // Pocket money: check balance (before creating any payments)
+        if ($method === 'pocket_money') {
+            $customer = $order->customer;
+            if ((float) $customer->pocket_money < (float) $request->amount) {
+                abort(422, 'ยอด Pocket Money ไม่เพียงพอ (คงเหลือ: ' . number_format((float) $customer->pocket_money, 2) . ' บาท)');
             }
+        }
 
-            // Pocket money: check balance
-            if ($method === 'pocket_money') {
-                $customer = $order->customer;
-                if ((float) $customer->pocket_money < (float) $request->amount) {
-                    abort(422, 'ยอด Pocket Money ไม่เพียงพอ (คงเหลือ: ' . number_format((float) $customer->pocket_money, 2) . ' บาท)');
-                }
-            }
-
-            $payment = Payment::create([
-                'payment_number' => Payment::generateNumber(),
-                'order_id' => $order->id,
-                'customer_id' => $order->customer_id,
-                'method' => $method,
-                'amount' => $request->amount,
-                'is_deposit' => $request->boolean('is_deposit'),
-                'status' => 'pending',
-                'notes' => $request->notes,
-                'slip_image' => $slipPath,
-                'slip_verified' => $slipVerified,
-                'slip_ref' => $slipRef,
-                'slip_data' => $slipData,
-                'slip_status_code' => $slipStatusCode,
-                'sender_name' => $senderName,
-                'sender_bank' => $senderBank,
-                'sender_account' => $senderAccount,
-                'receiver_name' => $receiverName,
-                'receiver_bank' => $receiverBank,
-                'receiver_account' => $receiverAccount,
-                'transfer_amount' => $transferAmount,
-                'transfer_date' => $transferDate,
-                'created_by' => $request->user()->id,
-            ]);
+        $payments = DB::transaction(function () use ($request, $order, $slipFilesList, $method) {
+            $slip2go = new Slip2goService();
+            $isSlip2goConfigured = $slip2go->isConfigured();
+            $createdPayments = [];
 
             $methodLabel = match ($method) {
                 'cash' => 'เงินสด',
@@ -165,28 +102,125 @@ class PaymentController extends Controller
                 'pocket_money' => 'Pocket Money',
             };
 
-            PaymentLog::create([
-                'payment_id' => $payment->id,
-                'order_id' => $order->id,
-                'action' => 'created',
-                'summary' => 'สร้างรายการชำระเงิน ' . $payment->payment_number .
-                    ' (' . $methodLabel . ') ' . number_format((float) $payment->amount, 2) . ' บาท' .
-                    ($payment->is_deposit ? ' (มัดจำ)' : ''),
-                'details' => [
-                    'method' => $request->method,
-                    'amount' => $request->amount,
-                    'slip_verified' => $slipVerified,
-                    'slip_status_code' => $slipStatusCode,
-                ],
-                'user_id' => $request->user()->id,
-            ]);
+            // If multiple slips: create one payment per slip
+            // If no slips: create a single payment
+            $iterations = count($slipFilesList) > 0 ? count($slipFilesList) : 1;
 
-            return $payment;
+            for ($i = 0; $i < $iterations; $i++) {
+                $slipFile = $slipFilesList[$i] ?? null;
+
+                $slipPath = null;
+                $slipData = null;
+                $slipRef = null;
+                $slipVerified = false;
+                $slipStatusCode = null;
+                $senderName = $request->sender_name;
+                $senderBank = $request->sender_bank;
+                $senderAccount = $request->sender_account;
+                $receiverName = $request->receiver_name;
+                $receiverBank = $request->receiver_bank;
+                $receiverAccount = $request->receiver_account;
+                $transferAmount = $request->transfer_amount;
+                $transferDate = $request->transfer_date;
+
+                // Handle slip image upload and verification
+                if ($slipFile && $method === 'transfer') {
+                    $slipPath = $slipFile->store('slips', 'public');
+
+                    // Try slip2go verification
+                    if ($isSlip2goConfigured) {
+                        try {
+                            $result = $slip2go->verifyByImage($slipFile, [
+                                'amount' => $request->amount,
+                            ]);
+                            $slipData = $result;
+                            $slipStatusCode = $result['code'] ?? null;
+
+                            if (isset($result['data'])) {
+                                $slipRef = $result['data']['transRef'] ?? null;
+                                $slipVerified = in_array($slipStatusCode, ['200000', '200200']);
+
+                                // Auto-fill transfer details from slip
+                                if (isset($result['data']['sender'])) {
+                                    $senderName = $senderName ?: ($result['data']['sender']['account']['name'] ?? null);
+                                    $senderBank = $senderBank ?: ($result['data']['sender']['bank']['name'] ?? null);
+                                    $senderAccount = $senderAccount ?: ($result['data']['sender']['account']['bank']['account'] ?? null);
+                                }
+                                if (isset($result['data']['receiver'])) {
+                                    $receiverName = $receiverName ?: ($result['data']['receiver']['account']['name'] ?? null);
+                                    $receiverBank = $receiverBank ?: ($result['data']['receiver']['bank']['name'] ?? null);
+                                    $receiverAccount = $receiverAccount ?: ($result['data']['receiver']['account']['bank']['account'] ?? null);
+                                }
+                                $transferAmount = $transferAmount ?: ($result['data']['amount'] ?? null);
+                                $transferDate = $transferDate ?: ($result['data']['dateTime'] ?? null);
+                            }
+                        } catch (\Throwable $e) {
+                            $slipData = ['code' => 'error', 'message' => $e->getMessage()];
+                            $slipStatusCode = 'error';
+                        }
+                    }
+                }
+
+                // Determine payment amount: use slip amount if available, else use request amount
+                $paymentAmount = $request->amount;
+                if ($slipFile && $transferAmount && count($slipFilesList) > 1) {
+                    $paymentAmount = $transferAmount;
+                }
+
+                $payment = Payment::create([
+                    'payment_number' => Payment::generateNumber(),
+                    'order_id' => $order->id,
+                    'customer_id' => $order->customer_id,
+                    'method' => $method,
+                    'amount' => $paymentAmount,
+                    'is_deposit' => $request->boolean('is_deposit'),
+                    'status' => 'pending',
+                    'notes' => $request->notes,
+                    'slip_image' => $slipPath,
+                    'slip_verified' => $slipVerified,
+                    'slip_ref' => $slipRef,
+                    'slip_data' => $slipData,
+                    'slip_status_code' => $slipStatusCode,
+                    'sender_name' => $senderName,
+                    'sender_bank' => $senderBank,
+                    'sender_account' => $senderAccount,
+                    'receiver_name' => $receiverName,
+                    'receiver_bank' => $receiverBank,
+                    'receiver_account' => $receiverAccount,
+                    'transfer_amount' => $transferAmount,
+                    'transfer_date' => $transferDate,
+                    'created_by' => $request->user()->id,
+                ]);
+
+                PaymentLog::create([
+                    'payment_id' => $payment->id,
+                    'order_id' => $order->id,
+                    'action' => 'created',
+                    'summary' => 'สร้างรายการชำระเงิน ' . $payment->payment_number .
+                        ' (' . $methodLabel . ') ' . number_format((float) $payment->amount, 2) . ' บาท' .
+                        ($payment->is_deposit ? ' (มัดจำ)' : '') .
+                        (count($slipFilesList) > 1 ? ' [สลิป ' . ($i + 1) . '/' . count($slipFilesList) . ']' : ''),
+                    'details' => [
+                        'method' => $method,
+                        'amount' => $paymentAmount,
+                        'slip_verified' => $slipVerified,
+                        'slip_status_code' => $slipStatusCode,
+                    ],
+                    'user_id' => $request->user()->id,
+                ]);
+
+                $createdPayments[] = $payment;
+            }
+
+            return $createdPayments;
         });
 
-        $payment->load(['creator', 'order']);
+        // Load relations
+        foreach ($payments as $payment) {
+            $payment->load(['creator', 'order']);
+        }
 
-        return response()->json(['payment' => $payment], 201);
+        return response()->json(['payments' => $payments], 201);
     }
 
     public function approve(Request $request, Payment $payment): JsonResponse

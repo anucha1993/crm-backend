@@ -19,29 +19,41 @@ class RoleSeeder extends Seeder
         );
         $admin->permissions()->sync($allPermissions->pluck('id'));
 
-        // Manager — ทุกอย่างยกเว้นจัดการ users และแก้ไข settings
+        // Manager — ทุกอย่างยกเว้นจัดการ users/roles และแก้ไข settings
         $manager = Role::firstOrCreate(
             ['name' => 'manager'],
-            ['display_name' => 'ผู้จัดการ', 'description' => 'จัดการลูกค้า ดีล งาน สินค้า และดูรายงาน']
+            ['display_name' => 'ผู้จัดการ', 'description' => 'จัดการลูกค้า ใบเสนอราคา คำสั่งซื้อ การชำระเงิน และดูรายงาน']
         );
         $managerPerms = $allPermissions->filter(function ($p) {
-            return ! str_starts_with($p->name, 'users.') && $p->name !== 'settings.edit';
+            return ! str_starts_with($p->name, 'users.')
+                && ! str_starts_with($p->name, 'roles.')
+                && $p->name !== 'settings.edit';
         })->pluck('id');
         $manager->permissions()->sync($managerPerms);
 
-        // Sales — ดู/สร้าง/แก้ไข ลูกค้า ดีล งาน สินค้า + ดูรายงาน + ดูหมวดหมู่
+        // Sales — ดู/สร้างเอกสารขาย แต่ไม่อนุมัติการชำระเงินและไม่ลบ
         $sales = Role::firstOrCreate(
             ['name' => 'sales'],
-            ['display_name' => 'พนักงานขาย', 'description' => 'จัดการลูกค้าและดีลของตัวเอง']
+            ['display_name' => 'พนักงานขาย', 'description' => 'จัดการลูกค้า ใบเสนอราคา และคำสั่งซื้อของตัวเอง']
         );
         $salesPerms = $allPermissions->filter(function ($p) {
             return in_array($p->name, [
+                // Customers
                 'customers.view', 'customers.create', 'customers.edit',
-                'deals.view', 'deals.create', 'deals.edit',
-                'tasks.view', 'tasks.create', 'tasks.edit',
-                'products.view', 'products.create', 'products.edit',
-                'categories.view',
+                'customer-levels.view',
+                // Sales documents
+                'quotations.view', 'quotations.create', 'quotations.edit',
+                'orders.view', 'orders.edit',
+                'payments.view', 'payments.create',
+                'invoices.view', 'invoices.create',
+                'deliveries.view', 'deliveries.create',
+                // Catalog (read-only)
+                'products.view', 'categories.view',
+                'vehicle-types.view',
+                // Reports
                 'reports.view',
+                // Settings
+                'settings.view',
             ]);
         })->pluck('id');
         $sales->permissions()->sync($salesPerms);
