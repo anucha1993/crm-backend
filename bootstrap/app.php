@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\AccountScope;
 use App\Http\Middleware\CheckPermission;
 use App\Http\Middleware\CheckRole;
 use App\Http\Middleware\Cors;
@@ -18,6 +19,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'permission' => CheckPermission::class,
             'role' => CheckRole::class,
+            'account.scope' => AccountScope::class,
         ]);
 
         $middleware->prepend(Cors::class);

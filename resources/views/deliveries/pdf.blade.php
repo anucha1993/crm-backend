@@ -127,7 +127,7 @@
             @if($showPrices)
                 <tr>
                     <td colspan="4" style="padding: 0;"></td>
-                    <td style="border: 1px solid #ccc; font-size: 9pt; padding: 5px 8px; text-align: right; background: #f7f9fc;">ราคาก่อนภาษี:</td>
+                    <td style="border: 1px solid #ccc; font-size: 9pt; padding: 5px 8px; text-align: right; background: #f7f9fc;">{{ $isVat ? 'ราคาก่อนภาษี:' : 'รวมเงิน:' }}</td>
                     <td style="border: 1px solid #ccc; font-size: 9pt; text-align: right; padding: 5px 8px;">{{ number_format($subtotal, 2) }}</td>
                 </tr>
                 <tr>
@@ -140,11 +140,13 @@
                     <td style="border: 1px solid #ccc; font-size: 9pt; padding: 5px 8px; text-align: right; background: #f7f9fc;">จำนวนหลังหักส่วนลด:</td>
                     <td style="border: 1px solid #ccc; font-size: 9pt; text-align: right; padding: 5px 8px;">{{ number_format($subtotal - $discountAmount, 2) }}</td>
                 </tr>
+                @if($isVat)
                 <tr>
                     <td colspan="4" style="padding: 0;"></td>
                     <td style="border: 1px solid #ccc; font-size: 9pt; padding: 5px 8px; text-align: right; background: #f7f9fc;">ภาษีมูลค่าเพิ่ม:</td>
                     <td style="border: 1px solid #ccc; font-size: 9pt; text-align: right; padding: 5px 8px;">{{ number_format($vatAmount, 2) }}</td>
                 </tr>
+                @endif
                 <tr>
                     <td colspan="4" style="padding: 0;"></td>
                     <td style="border: 1px solid #1e3a5f; font-size: 10pt; font-weight: bold; padding: 6px 8px; text-align: right; background: #1e3a5f; color: #fff;">จำนวนเงินทั้งสิ้น:</td>

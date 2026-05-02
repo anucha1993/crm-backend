@@ -2,13 +2,17 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToAccount;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Invoice extends Model
 {
+    use BelongsToAccount;
+
     protected $fillable = [
+        'account_type',
         'invoice_number', 'order_id', 'customer_id', 'customer_address_id',
         'status', 'issue_date', 'subtotal', 'discount_type', 'discount_value',
         'discount_amount', 'vat_rate', 'vat_amount', 'total',
@@ -70,7 +74,8 @@ class Invoice extends Model
         $mm = date('m');
         $prefix = 'IV' . $yy . $mm;
 
-        $last = static::where('invoice_number', 'like', $prefix . '%')
+        $last = static::withoutGlobalScope('account')
+            ->where('invoice_number', 'like', $prefix . '%')
             ->orderBy('invoice_number', 'desc')
             ->first();
 

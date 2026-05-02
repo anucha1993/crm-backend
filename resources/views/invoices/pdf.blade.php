@@ -21,7 +21,7 @@
 
     {{-- ===== Document Title (centered) ===== --}}
     <div style="text-align: center; font-size: 14pt; font-weight: bold; margin-bottom: 8px;">
-        ใบเสร็จรับเงิน / ใบกำกับภาษี
+        {{ $isVat ? 'ใบเสร็จรับเงิน / ใบกำกับภาษี' : 'ใบเสร็จรับเงิน / บิลเงินสด' }}
     </div>
 
     {{-- ===== Company Info + Invoice Number ===== --}}
@@ -65,7 +65,7 @@
                 @if($invoice->shippingAddress && $invoice->shippingAddress->address !== ($invoice->customer?->address ?? ''))
                     <span style="font-size: 9pt;">{{ $invoice->shippingAddress->address }}</span><br>
                 @endif
-                @if($invoice->customer?->tax_id)
+                @if($invoice->customer?->tax_id && $isVat)
                     <span style="font-size: 9pt;">เลขประจำตัวผู้เสียภาษีอากร: {{ $invoice->customer->tax_id }}</span>
                 @endif
             </td>
@@ -84,7 +84,7 @@
                 <th width="50" style="text-align: center; font-size: 9pt; padding: 5px; border: 1px solid #000;">หน่วยนับ</th>
                 <th style="text-align: center; font-size: 9pt; padding: 5px; border: 1px solid #000;">รายการสินค้า</th>
                 <th width="110" style="text-align: center; font-size: 9pt; padding: 5px; border: 1px solid #000;">ราคาต่อหน่วย</th>
-                <th width="95" style="text-align: center; font-size: 9pt; padding: 5px; border: 1px solid #000;">จำนวนเงินไม่รวมภาษี</th>
+                <th width="95" style="text-align: center; font-size: 9pt; padding: 5px; border: 1px solid #000;">{{ $isVat ? 'จำนวนเงินไม่รวมภาษี' : 'จำนวนเงิน' }}</th>
             </tr>
         </thead>
         <tbody>
@@ -135,11 +135,13 @@
                 <td style="border: 1px solid #000; font-size: 9pt; padding: 4px 8px; text-align: right;">เงินหลังหักส่วนลด</td>
                 <td style="border: 1px solid #000; font-size: 9pt; text-align: right; padding: 4px 8px;">{{ number_format((float)$invoice->subtotal - (float)$invoice->discount_amount, 2)}}</td>
             </tr>
+            @if($isVat)
             <tr>
                 <td colspan="4" style="padding: 0;"></td>
-                <td style="border: 1px solid #000; font-size: 9pt; padding: 4px 8px; text-align: right;">ภาษีมูลค่าเพิ่ม 7%</td>
+                <td style="border: 1px solid #000; font-size: 9pt; padding: 4px 8px; text-align: right;">ภาษีมูลค่าเพิ่ม {{ rtrim(rtrim(number_format((float)$invoice->vat_rate, 2), '0'), '.') }}%</td>
                 <td style="border: 1px solid #000; font-size: 9pt; text-align: right; padding: 4px 8px;">{{ number_format((float)$invoice->vat_amount, 2) }}</td>
             </tr>
+            @endif
             <tr>
                 <td colspan="4" style="padding: 0;"></td>
                 <td style="border: 1px solid #000; font-size: 10pt; font-weight: bold; padding: 4px 8px;">ยอดเงินสุทธิ</td>

@@ -2,13 +2,17 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToAccount;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Delivery extends Model
 {
+    use BelongsToAccount;
+
     protected $fillable = [
+        'account_type',
         'delivery_number', 'order_id', 'customer_id', 'customer_address_id',
         'status', 'delivery_date', 'delivered_at', 'notes',
         'total_weight', 'suggested_vehicle',
@@ -57,7 +61,8 @@ class Delivery extends Model
     public static function generateNumber(): string
     {
         $prefix = 'DLV-' . date('Ym') . '-';
-        $last = static::where('delivery_number', 'like', $prefix . '%')
+        $last = static::withoutGlobalScope('account')
+            ->where('delivery_number', 'like', $prefix . '%')
             ->orderBy('delivery_number', 'desc')
             ->first();
         $nextNum = $last ? ((int) substr($last->delivery_number, strlen($prefix))) + 1 : 1;

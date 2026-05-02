@@ -2,13 +2,17 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToAccount;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Payment extends Model
 {
+    use BelongsToAccount;
+
     protected $fillable = [
+        'account_type',
         'payment_number', 'order_id', 'customer_id', 'method', 'amount',
         'is_deposit', 'status', 'notes', 'reject_reason',
         'slip_image', 'slip_verified', 'slip_ref', 'slip_data', 'slip_status_code',
@@ -59,7 +63,8 @@ class Payment extends Model
     public static function generateNumber(): string
     {
         $prefix = 'PAY-' . date('Ym') . '-';
-        $last = static::where('payment_number', 'like', $prefix . '%')
+        $last = static::withoutGlobalScope('account')
+            ->where('payment_number', 'like', $prefix . '%')
             ->orderBy('payment_number', 'desc')
             ->first();
         $nextNum = $last ? ((int) substr($last->payment_number, strlen($prefix))) + 1 : 1;

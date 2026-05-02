@@ -114,80 +114,69 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('permission:customers.delete')->delete('/customers/{customer}', [CustomerController::class, 'destroy']);
 
     // Quotations
-    Route::middleware('permission:quotations.view')->group(function () {
-        Route::get('/quotations/next-number', [QuotationController::class, 'nextNumber']);
-        Route::get('/quotations', [QuotationController::class, 'index']);
-        Route::get('/quotations/{quotation}', [QuotationController::class, 'show']);
-        Route::get('/quotations/{quotation}/revisions', [QuotationController::class, 'revisions']);
-    });
-    Route::middleware('permission:quotations.create')->group(function () {
-        Route::post('/quotations', [QuotationController::class, 'store']);
-        Route::post('/quotations/{quotation}/duplicate', [QuotationController::class, 'duplicate']);
-    });
-    Route::middleware('permission:quotations.edit')->match(['put', 'patch'], '/quotations/{quotation}', [QuotationController::class, 'update']);
-    Route::middleware('permission:quotations.delete')->delete('/quotations/{quotation}', [QuotationController::class, 'destroy']);
+    Route::middleware('account.scope')->group(function () {
+        Route::middleware('permission:quotations.view')->group(function () {
+            Route::get('/quotations/next-number', [QuotationController::class, 'nextNumber']);
+            Route::get('/quotations', [QuotationController::class, 'index']);
+            Route::get('/quotations/{quotation}', [QuotationController::class, 'show']);
+            Route::get('/quotations/{quotation}/revisions', [QuotationController::class, 'revisions']);
+        });
+        Route::middleware('permission:quotations.create')->group(function () {
+            Route::post('/quotations', [QuotationController::class, 'store']);
+            Route::post('/quotations/{quotation}/duplicate', [QuotationController::class, 'duplicate']);
+        });
+        Route::middleware('permission:quotations.edit')->match(['put', 'patch'], '/quotations/{quotation}', [QuotationController::class, 'update']);
+        Route::middleware('permission:quotations.delete')->delete('/quotations/{quotation}', [QuotationController::class, 'destroy']);
 
-    // Company Settings
-    Route::middleware('permission:settings.view')->group(function () {
-        Route::get('/company-settings', [CompanySettingController::class, 'index']);
-        Route::get('/company-settings/slip2go', [PaymentController::class, 'slip2goSettings']);
-    });
-    Route::middleware('permission:settings.edit')->group(function () {
-        Route::put('/company-settings', [CompanySettingController::class, 'update']);
-        Route::post('/company-settings/logo', [CompanySettingController::class, 'uploadLogo']);
-        Route::delete('/company-settings/logo', [CompanySettingController::class, 'deleteLogo']);
-        Route::put('/company-settings/slip2go', [PaymentController::class, 'slip2goSettings']);
-        Route::post('/company-settings/slip2go/test', [PaymentController::class, 'slip2goTest']);
-    });
+        // Orders
+        Route::middleware('permission:orders.view')->group(function () {
+            Route::get('/orders', [OrderController::class, 'index']);
+            Route::get('/orders/{order}', [OrderController::class, 'show']);
+            Route::get('/orders/{order}/timeline', [OrderController::class, 'timeline']);
+        });
+        Route::middleware('permission:orders.edit')->match(['put', 'patch'], '/orders/{order}', [OrderController::class, 'update']);
 
-    // Orders
-    Route::middleware('permission:orders.view')->group(function () {
-        Route::get('/orders', [OrderController::class, 'index']);
-        Route::get('/orders/{order}', [OrderController::class, 'show']);
-        Route::get('/orders/{order}/timeline', [OrderController::class, 'timeline']);
-    });
-    Route::middleware('permission:orders.edit')->match(['put', 'patch'], '/orders/{order}', [OrderController::class, 'update']);
+        // Payments
+        Route::middleware('permission:payments.view')->group(function () {
+            Route::get('/payments', [PaymentController::class, 'index']);
+            Route::get('/payments/{payment}', [PaymentController::class, 'show']);
+        });
+        Route::middleware('permission:payments.create')->group(function () {
+            Route::post('/orders/{order}/payments', [PaymentController::class, 'store']);
+            Route::post('/payments/{payment}/resubmit', [PaymentController::class, 'resubmit']);
+            Route::post('/payments/verify-slip', [PaymentController::class, 'verifySlip']);
+        });
+        Route::middleware('permission:payments.approve')->post('/payments/{payment}/approve', [PaymentController::class, 'approve']);
+        Route::middleware('permission:payments.reject')->post('/payments/{payment}/reject', [PaymentController::class, 'reject']);
 
-    // Payments
-    Route::middleware('permission:payments.view')->group(function () {
-        Route::get('/payments', [PaymentController::class, 'index']);
-        Route::get('/payments/{payment}', [PaymentController::class, 'show']);
-    });
-    Route::middleware('permission:payments.create')->group(function () {
-        Route::post('/orders/{order}/payments', [PaymentController::class, 'store']);
-        Route::post('/payments/{payment}/resubmit', [PaymentController::class, 'resubmit']);
-        Route::post('/payments/verify-slip', [PaymentController::class, 'verifySlip']);
-    });
-    Route::middleware('permission:payments.approve')->post('/payments/{payment}/approve', [PaymentController::class, 'approve']);
-    Route::middleware('permission:payments.reject')->post('/payments/{payment}/reject', [PaymentController::class, 'reject']);
+        // Invoices
+        Route::middleware('permission:invoices.view')->group(function () {
+            Route::get('/invoices', [InvoiceController::class, 'index']);
+            Route::get('/invoices/{invoice}', [InvoiceController::class, 'show']);
+        });
+        Route::middleware('permission:invoices.create')->post('/orders/{order}/invoices', [InvoiceController::class, 'store']);
+        Route::middleware('permission:invoices.cancel')->post('/invoices/{invoice}/cancel', [InvoiceController::class, 'cancel']);
 
-    // Invoices
-    Route::middleware('permission:invoices.view')->group(function () {
-        Route::get('/invoices', [InvoiceController::class, 'index']);
-        Route::get('/invoices/{invoice}', [InvoiceController::class, 'show']);
-    });
-    Route::middleware('permission:invoices.create')->post('/orders/{order}/invoices', [InvoiceController::class, 'store']);
-    Route::middleware('permission:invoices.cancel')->post('/invoices/{invoice}/cancel', [InvoiceController::class, 'cancel']);
+        // Deliveries
+        Route::middleware('permission:deliveries.view')->group(function () {
+            Route::get('/deliveries', [DeliveryController::class, 'index']);
+            Route::get('/deliveries/{delivery}', [DeliveryController::class, 'show']);
+            Route::get('/orders/{order}/delivery-remaining', [DeliveryController::class, 'orderRemaining']);
+        });
+        Route::middleware('permission:deliveries.create')->post('/orders/{order}/deliveries', [DeliveryController::class, 'store']);
+        Route::middleware('permission:deliveries.confirm')->post('/deliveries/{delivery}/confirm', [DeliveryController::class, 'confirmDelivery']);
+        Route::middleware('permission:deliveries.cancel')->post('/deliveries/{delivery}/cancel', [DeliveryController::class, 'cancel']);
 
-    // Deliveries
-    Route::middleware('permission:deliveries.view')->group(function () {
-        Route::get('/deliveries', [DeliveryController::class, 'index']);
-        Route::get('/deliveries/{delivery}', [DeliveryController::class, 'show']);
-        Route::get('/orders/{order}/delivery-remaining', [DeliveryController::class, 'orderRemaining']);
-    });
-    Route::middleware('permission:deliveries.create')->post('/orders/{order}/deliveries', [DeliveryController::class, 'store']);
-    Route::middleware('permission:deliveries.confirm')->post('/deliveries/{delivery}/confirm', [DeliveryController::class, 'confirmDelivery']);
-    Route::middleware('permission:deliveries.cancel')->post('/deliveries/{delivery}/cancel', [DeliveryController::class, 'cancel']);
-
-    // Reports
-    Route::middleware('permission:reports.view')->group(function () {
-        Route::get('/reports/dashboard', [ReportController::class, 'dashboard']);
-        Route::get('/reports/sales-by-seller', [ReportController::class, 'salesBySeller']);
-        Route::get('/reports/inactive-customers', [ReportController::class, 'inactiveCustomers']);
-        Route::get('/reports/ar-aging', [ReportController::class, 'arAging']);
-        Route::get('/reports/monthly-sales', [ReportController::class, 'monthlySales']);
-        Route::get('/reports/invoices', [ReportController::class, 'invoiceReport']);
-        Route::get('/reports/sales-by-customer', [ReportController::class, 'salesByCustomer']);
-        Route::get('/reports/sales-by-product', [ReportController::class, 'salesByProduct']);
+        // Reports (scoped per account)
+        Route::middleware('permission:reports.view')->group(function () {
+            Route::get('/reports/dashboard', [ReportController::class, 'dashboard']);
+            Route::get('/reports/sales-by-seller', [ReportController::class, 'salesBySeller']);
+            Route::get('/reports/inactive-customers', [ReportController::class, 'inactiveCustomers']);
+            Route::get('/reports/ar-aging', [ReportController::class, 'arAging']);
+            Route::get('/reports/monthly-sales', [ReportController::class, 'monthlySales']);
+            Route::get('/reports/invoices', [ReportController::class, 'invoiceReport']);
+            Route::get('/reports/sales-by-customer', [ReportController::class, 'salesByCustomer']);
+            Route::get('/reports/sales-by-product', [ReportController::class, 'salesByProduct']);
+        });
     });
 });

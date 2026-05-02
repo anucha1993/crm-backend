@@ -19,7 +19,9 @@ class DeliveryController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $query = Delivery::with(['order:id,order_number', 'customer:id,name', 'creator:id,name']);
+        $accountType = $request->attributes->get('account_type');
+        $query = Delivery::with(['order:id,order_number', 'customer:id,name', 'creator:id,name'])
+            ->where('account_type', $accountType);
 
         if ($request->filled('search')) {
             $search = $request->search;
@@ -52,8 +54,9 @@ class DeliveryController extends Controller
         return response()->json($deliveries);
     }
 
-    public function show(Delivery $delivery): JsonResponse
+    public function show(Delivery $delivery, Request $request): JsonResponse
     {
+        $this->ensureAccountMatch($delivery, $request);
         $delivery->load([
             'order.customer', 'order.shippingAddress',
             'customer', 'shippingAddress',
@@ -66,6 +69,11 @@ class DeliveryController extends Controller
 
     public function store(Request $request, Order $order): JsonResponse
     {
+        $accountType = $request->attributes->get('account_type');
+        if ($accountType && $order->account_type !== $accountType) {
+            abort(404, 'ไม่พบคำสั่งซื้อในบัญชีปัจจุบัน');
+        }
+
         $request->validate([
             'delivery_date' => 'required|date',
             'notes' => 'nullable|string',
@@ -109,6 +117,7 @@ class DeliveryController extends Controller
 
         $delivery = DB::transaction(function () use ($request, $order, $orderItems) {
             $delivery = Delivery::create([
+                'account_type' => $order->account_type,
                 'delivery_number' => Delivery::generateNumber(),
                 'order_id' => $order->id,
                 'customer_id' => $order->customer_id,
@@ -199,6 +208,7 @@ class DeliveryController extends Controller
 
     public function confirmDelivery(Request $request, Delivery $delivery): JsonResponse
     {
+        $this->ensureAccountMatch($delivery, $request);
         if ($delivery->status === 'delivered') {
             return response()->json(['message' => 'ใบส่งของนี้ยืนยันจัดส่งไปแล้ว'], 422);
         }
@@ -231,6 +241,7 @@ class DeliveryController extends Controller
 
     public function cancel(Request $request, Delivery $delivery): JsonResponse
     {
+        $this->ensureAccountMatch($delivery, $request);
         if ($delivery->status === 'delivered') {
             return response()->json(['message' => 'ไม่สามารถยกเลิกใบส่งของที่จัดส่งแล้ว'], 422);
         }
@@ -252,6 +263,14 @@ class DeliveryController extends Controller
         return response()->json(['delivery' => $delivery]);
     }
 
+    private function ensureAccountMatch(Delivery $delivery, Request $request): void
+    {
+        $accountType = $request->attributes->get('account_type');
+        if ($accountType && $delivery->account_type !== $accountType) {
+            abort(404, 'ไม่พบเอกสารในบัญชีปัจจุบัน');
+        }
+    }
+
     /**
      * Public: Lookup delivery by delivery_number (for QR scan)
      */
@@ -271,8 +290,12 @@ class DeliveryController extends Controller
     /**
      * Get remaining quantities for an order (to help create delivery)
      */
-    public function orderRemaining(Order $order): JsonResponse
+    public function orderRemaining(Order $order, Request $request): JsonResponse
     {
+        $accountType = $request->attributes->get('account_type');
+        if ($accountType && $order->account_type !== $accountType) {
+            abort(404, 'ไม่พบคำสั่งซื้อในบัญชีปัจจุบัน');
+        }
         $orderItems = $order->items()->with('product')->get();
 
         $existingDeliveries = DeliveryItem::whereHas('delivery', function ($q) use ($order) {
@@ -350,7 +373,7 @@ class DeliveryController extends Controller
         $total = round($subtotal - $discountAmount + $vatAmount, 2);
         $bahtText = $this->numberToThaiText($total);
 
-        $isVat = (float) $order->vat_rate > 0;
+        $isVat = (($delivery->account_type ?? $order->account_type) === 'tax');
         $qrData = $delivery->delivery_number;
 
         $mpdf = new Mpdf([

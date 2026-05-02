@@ -77,12 +77,24 @@ class AuthController extends Controller
     {
         $user->load('roles.permissions');
 
+        $permissions = $user->getAllPermissions();
+        $isAdmin = $user->roles->pluck('name')->contains('admin');
+
+        $availableAccounts = [];
+        if ($isAdmin || in_array('accounts.cash', $permissions, true)) {
+            $availableAccounts[] = 'cash';
+        }
+        if ($isAdmin || in_array('accounts.tax', $permissions, true)) {
+            $availableAccounts[] = 'tax';
+        }
+
         return [
             'id' => $user->id,
             'name' => $user->name,
             'email' => $user->email,
             'roles' => $user->roles->pluck('name'),
-            'permissions' => $user->getAllPermissions(),
+            'permissions' => $permissions,
+            'available_accounts' => $availableAccounts,
         ];
     }
 }

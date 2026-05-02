@@ -2,13 +2,17 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToAccount;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Order extends Model
 {
+    use BelongsToAccount;
+
     protected $fillable = [
+        'account_type',
         'order_number', 'quotation_id', 'customer_id', 'customer_address_id',
         'status', 'delivery_status', 'notes', 'subtotal', 'discount_type', 'discount_value',
         'discount_amount', 'vat_rate', 'vat_amount', 'total',
@@ -91,7 +95,8 @@ class Order extends Model
     public static function generateNumber(): string
     {
         $prefix = 'ORD-' . date('Ym') . '-';
-        $last = static::where('order_number', 'like', $prefix . '%')
+        $last = static::withoutGlobalScope('account')
+            ->where('order_number', 'like', $prefix . '%')
             ->orderBy('order_number', 'desc')
             ->first();
         $nextNum = $last ? ((int) substr($last->order_number, strlen($prefix))) + 1 : 1;

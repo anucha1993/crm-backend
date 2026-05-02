@@ -20,7 +20,8 @@ class QuotationController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $query = Quotation::with(['customer', 'creator']);
+        $accountType = $request->attributes->get('account_type');
+        $query = Quotation::with(['customer', 'creator'])->where('account_type', $accountType);
 
         if ($request->filled('search')) {
             $search = $request->search;
@@ -67,6 +68,7 @@ class QuotationController extends Controller
             $totals = $this->calculateTotals($request);
 
             $quotation = Quotation::create([
+                'account_type' => $request->attributes->get('account_type'),
                 'quotation_number' => Quotation::generateNumber(),
                 'customer_id' => $request->customer_id,
                 'customer_address_id' => $request->customer_address_id,
@@ -117,15 +119,57 @@ class QuotationController extends Controller
         return response()->json(['quotation' => $quotation], 201);
     }
 
-    public function show(Quotation $quotation): JsonResponse
+    public function show(Quotation $quotation, Request $request): JsonResponse
     {
+        $this->ensureAccountMatch($quotation, $request);
+
         $quotation->load(['customer.addresses', 'shippingAddress', 'items.product', 'creator', 'updater']);
 
-        return response()->json(['quotation' => $quotation]);
+        $linkedOrder = Order::where('quotation_id', $quotation->id)->first(['id', 'order_number', 'status']);
+
+        return response()->json([
+            'quotation' => $quotation,
+            'linked_order' => $linkedOrder,
+        ]);
+    }
+
+    private function ensureAccountMatch(Quotation $quotation, Request $request): void
+    {
+        $accountType = $request->attributes->get('account_type');
+        if ($quotation->account_type !== $accountType) {
+            abort(404, 'ไม่พบเอกสารในบัญชีปัจจุบัน');
+        }
     }
 
     public function update(Request $request, Quotation $quotation): JsonResponse
     {
+        $this->ensureAccountMatch($quotation, $request);
+
+        // Block edits if a non-cancelled order has been opened from this quotation.
+        // The user must edit the order instead; the system will sync changes back here.
+        $linkedOrder = Order::where('quotation_id', $quotation->id)
+            ->where('status', '!=', 'cancelled')
+            ->first();
+
+        if ($linkedOrder) {
+            // Allow only soft fields that don't affect financials/items (status & notes still safe to change
+            // only if user isn't trying to send items/discount/vat). If they sent any of those, block.
+            $blockedFields = ['items', 'discount_type', 'discount_value', 'vat_rate', 'customer_id', 'customer_address_id'];
+            $hasBlocked = false;
+            foreach ($blockedFields as $f) {
+                if ($request->has($f)) { $hasBlocked = true; break; }
+            }
+            if ($hasBlocked) {
+                return response()->json([
+                    'message' => 'ใบเสนอราคานี้มีคำสั่งซื้อ ' . $linkedOrder->order_number . ' แล้ว ไม่สามารถแก้ไขได้ กรุณาไปแก้ไขที่คำสั่งซื้อแทน',
+                    'linked_order' => [
+                        'id' => $linkedOrder->id,
+                        'order_number' => $linkedOrder->order_number,
+                    ],
+                ], 423);
+            }
+        }
+
         $request->validate([
             'customer_id' => 'sometimes|exists:customers,id',
             'customer_address_id' => 'nullable|exists:customer_addresses,id',
@@ -228,6 +272,7 @@ class QuotationController extends Controller
         if ($oldStatus !== 'approved' && $quotation->status === 'approved') {
             $order = DB::transaction(function () use ($quotation, $request) {
                 $order = Order::create([
+                    'account_type' => $quotation->account_type,
                     'order_number' => Order::generateNumber(),
                     'quotation_id' => $quotation->id,
                     'customer_id' => $quotation->customer_id,
@@ -322,8 +367,9 @@ class QuotationController extends Controller
         ]);
     }
 
-    public function destroy(Quotation $quotation): JsonResponse
+    public function destroy(Quotation $quotation, Request $request): JsonResponse
     {
+        $this->ensureAccountMatch($quotation, $request);
         $quotation->delete();
 
         return response()->json(['message' => 'ลบใบเสนอราคาสำเร็จ']);
@@ -334,15 +380,17 @@ class QuotationController extends Controller
         return response()->json(['number' => Quotation::generateNumber()]);
     }
 
-    public function revisions(Quotation $quotation): JsonResponse
+    public function revisions(Quotation $quotation, Request $request): JsonResponse
     {
+        $this->ensureAccountMatch($quotation, $request);
         $revisions = $quotation->revisions()->with('user:id,name')->get();
 
         return response()->json(['revisions' => $revisions]);
     }
 
-    public function duplicate(Quotation $quotation): JsonResponse
+    public function duplicate(Quotation $quotation, Request $request): JsonResponse
     {
+        $this->ensureAccountMatch($quotation, $request);
         $quotation->load('items');
 
         $new = DB::transaction(function () use ($quotation) {
@@ -425,7 +473,7 @@ class QuotationController extends Controller
         $quotation->load(['customer', 'shippingAddress', 'items.product.sizes', 'creator']);
 
         $company = CompanySetting::getAll();
-        $isVat = (float) $quotation->vat_rate > 0;
+        $isVat = $quotation->account_type === 'tax';
 
         $logoPath = null;
         if (!empty($company['logo']) && Storage::disk('public')->exists($company['logo'])) {

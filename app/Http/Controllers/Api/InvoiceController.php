@@ -19,7 +19,9 @@ class InvoiceController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $query = Invoice::with(['order:id,order_number', 'customer:id,name,code', 'creator:id,name']);
+        $accountType = $request->attributes->get('account_type');
+        $query = Invoice::with(['order:id,order_number', 'customer:id,name,code', 'creator:id,name'])
+            ->where('account_type', $accountType);
 
         if ($request->filled('search')) {
             $search = $request->search;
@@ -40,8 +42,9 @@ class InvoiceController extends Controller
         return response()->json($invoices);
     }
 
-    public function show(Invoice $invoice): JsonResponse
+    public function show(Invoice $invoice, Request $request): JsonResponse
     {
+        $this->ensureAccountMatch($invoice, $request);
         $invoice->load([
             'order.customer', 'order.shippingAddress',
             'customer', 'shippingAddress',
@@ -54,6 +57,11 @@ class InvoiceController extends Controller
 
     public function store(Request $request, Order $order): JsonResponse
     {
+        $accountType = $request->attributes->get('account_type');
+        if ($accountType && $order->account_type !== $accountType) {
+            abort(404, 'ไม่พบคำสั่งซื้อในบัญชีปัจจุบัน');
+        }
+
         // Validate order is fully paid
         if ((float) $order->remaining_amount > 0) {
             return response()->json([
@@ -86,6 +94,7 @@ class InvoiceController extends Controller
 
         $invoice = DB::transaction(function () use ($request, $order) {
             $invoice = Invoice::create([
+                'account_type' => $order->account_type,
                 'invoice_number' => Invoice::generateNumber(),
                 'order_id' => $order->id,
                 'customer_id' => $order->customer_id,
@@ -143,6 +152,7 @@ class InvoiceController extends Controller
 
     public function cancel(Request $request, Invoice $invoice): JsonResponse
     {
+        $this->ensureAccountMatch($invoice, $request);
         if ($invoice->status !== 'issued') {
             return response()->json(['message' => 'ใบกำกับภาษีนี้ไม่สามารถยกเลิกได้'], 422);
         }
@@ -172,6 +182,14 @@ class InvoiceController extends Controller
         return response()->json(['invoice' => $invoice]);
     }
 
+    private function ensureAccountMatch(Invoice $invoice, Request $request): void
+    {
+        $accountType = $request->attributes->get('account_type');
+        if ($accountType && $invoice->account_type !== $accountType) {
+            abort(404, 'ไม่พบเอกสารในบัญชีปัจจุบัน');
+        }
+    }
+
     public function exportPdf(Request $request, Invoice $invoice)
     {
         $token = $request->query('token');
@@ -186,7 +204,7 @@ class InvoiceController extends Controller
         $invoice->load(['customer', 'shippingAddress', 'items.product.sizes', 'creator', 'order']);
 
         $company = CompanySetting::getAll();
-        $isVat = (float) $invoice->vat_rate > 0;
+        $isVat = $invoice->account_type === 'tax';
 
         $logoPath = null;
         if (!empty($company['logo']) && Storage::disk('public')->exists($company['logo'])) {

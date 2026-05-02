@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\DeliveryItem;
 use App\Models\Order;
 use App\Models\PaymentLog;
+use App\Models\QuotationRevision;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -14,7 +15,9 @@ class OrderController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $query = Order::with(['customer', 'quotation:id,quotation_number', 'creator']);
+        $accountType = $request->attributes->get('account_type');
+        $query = Order::with(['customer', 'quotation:id,quotation_number', 'creator'])
+            ->where('account_type', $accountType);
 
         if ($request->filled('search')) {
             $search = $request->search;
@@ -42,8 +45,9 @@ class OrderController extends Controller
         return response()->json($orders);
     }
 
-    public function show(Order $order): JsonResponse
+    public function show(Order $order, Request $request): JsonResponse
     {
+        $this->ensureAccountMatch($order, $request);
         $order->load([
             'customer', 'shippingAddress', 'quotation',
             'items.product.sizes', 'payments.creator', 'payments.approver',
@@ -57,6 +61,7 @@ class OrderController extends Controller
 
     public function update(Request $request, Order $order): JsonResponse
     {
+        $this->ensureAccountMatch($order, $request);
         $request->validate([
             'status' => 'sometimes|in:pending,in_progress,completed,cancelled',
             'notes' => 'nullable|string',
@@ -145,10 +150,13 @@ class OrderController extends Controller
                     $qty = (float) $item['quantity'];
                     $price = (float) $item['unit_price'];
 
-                    if ($thickness && $length && $length > 0) {
-                        $amount = $thickness * $length * $qty * $price;
+                    // Match QuotationController::calculateItemAmount logic exactly
+                    if ($thickness && $thickness > 0) {
+                        $amount = round($thickness * ($length ?? 1) * $qty * $price, 2);
+                    } elseif ($length && $length > 0) {
+                        $amount = round($length * $qty * $price, 2);
                     } else {
-                        $amount = $qty * $price;
+                        $amount = round($qty * $price, 2);
                     }
 
                     $data = [
@@ -218,6 +226,11 @@ class OrderController extends Controller
             ]);
         }
 
+        // Sync changes back to source Quotation so both stay in sync
+        if ($request->has('items') && $order->quotation_id) {
+            $this->syncOrderToQuotation($order, $request->user()->id);
+        }
+
         // Check issued invoices
         $issuedInvoices = $order->invoices()->where('status', 'issued')->pluck('invoice_number');
         if ($issuedInvoices->count() > 0 && $request->has('items')) {
@@ -232,11 +245,71 @@ class OrderController extends Controller
         return response()->json(['order' => $order, 'warnings' => $warnings]);
     }
 
-    public function timeline(Order $order): JsonResponse
+    public function timeline(Order $order, Request $request): JsonResponse
     {
+        $this->ensureAccountMatch($order, $request);
         $logs = $order->paymentLogs()->with('user:id,name')->get();
 
         return response()->json(['logs' => $logs]);
+    }
+
+    private function ensureAccountMatch(Order $order, Request $request): void
+    {
+        $accountType = $request->attributes->get('account_type');
+        if ($order->account_type !== $accountType) {
+            abort(404, 'ไม่พบเอกสารในบัญชีปัจจุบัน');
+        }
+    }
+
+    /**
+     * Sync order edits back to the linked quotation so they stay consistent.
+     * Rebuilds quotation items from order items, recalculates totals, and logs a revision.
+     */
+    private function syncOrderToQuotation(Order $order, int $userId): void
+    {
+        $quotation = $order->quotation()->first();
+        if (!$quotation) {
+            return;
+        }
+
+        DB::transaction(function () use ($order, $quotation, $userId) {
+            // Rebuild quotation items from order items
+            $quotation->items()->delete();
+            foreach ($order->items as $i => $item) {
+                $quotation->items()->create([
+                    'product_id' => $item->product_id,
+                    'description' => $item->description,
+                    'quantity' => $item->quantity,
+                    'unit' => $item->unit,
+                    'unit_price' => $item->unit_price,
+                    'thickness' => $item->thickness,
+                    'length' => $item->length,
+                    'amount' => $item->amount,
+                    'sort_order' => $i,
+                ]);
+            }
+
+            $quotation->update([
+                'subtotal' => $order->subtotal,
+                'discount_type' => $order->discount_type,
+                'discount_value' => $order->discount_value,
+                'discount_amount' => $order->discount_amount,
+                'vat_rate' => $order->vat_rate,
+                'vat_amount' => $order->vat_amount,
+                'total' => $order->total,
+                'revision_number' => ($quotation->revision_number ?? 0) + 1,
+                'updated_by' => $userId,
+            ]);
+
+            QuotationRevision::create([
+                'quotation_id' => $quotation->id,
+                'revision_number' => $quotation->revision_number,
+                'action' => 'updated',
+                'summary' => 'ซิงค์จากคำสั่งซื้อ ' . $order->order_number . ' (ยอดรวม: ' . number_format((float) $order->total, 2) . ')',
+                'changes' => null,
+                'user_id' => $userId,
+            ]);
+        });
     }
 
     /**

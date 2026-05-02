@@ -17,7 +17,9 @@ class PaymentController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $query = Payment::with(['order:id,order_number', 'customer:id,name,code', 'creator:id,name', 'approver:id,name']);
+        $accountType = $request->attributes->get('account_type');
+        $query = Payment::with(['order:id,order_number', 'customer:id,name,code', 'creator:id,name', 'approver:id,name'])
+            ->where('account_type', $accountType);
 
         if ($request->filled('search')) {
             $search = $request->search;
@@ -42,8 +44,9 @@ class PaymentController extends Controller
         return response()->json($payments);
     }
 
-    public function show(Payment $payment): JsonResponse
+    public function show(Payment $payment, Request $request): JsonResponse
     {
+        $this->ensureAccountMatch($payment, $request);
         $payment->load([
             'order.customer', 'order.items', 'customer',
             'creator:id,name', 'approver:id,name',
@@ -52,8 +55,21 @@ class PaymentController extends Controller
         return response()->json(['payment' => $payment]);
     }
 
+    private function ensureAccountMatch(Payment $payment, Request $request): void
+    {
+        $accountType = $request->attributes->get('account_type');
+        if ($payment->account_type !== $accountType) {
+            abort(404, 'ไม่พบเอกสารในบัญชีปัจจุบัน');
+        }
+    }
+
     public function store(Request $request, Order $order): JsonResponse
     {
+        $accountType = $request->attributes->get('account_type');
+        if ($accountType && $order->account_type !== $accountType) {
+            abort(404, 'ไม่พบคำสั่งซื้อในบัญชีปัจจุบัน');
+        }
+
         $request->validate([
             'method' => 'required|in:cash,transfer,pocket_money',
             'amount' => 'required|numeric|min:0.01',
@@ -168,6 +184,7 @@ class PaymentController extends Controller
                 }
 
                 $payment = Payment::create([
+                    'account_type' => $request->attributes->get('account_type') ?? $order->account_type,
                     'payment_number' => Payment::generateNumber(),
                     'order_id' => $order->id,
                     'customer_id' => $order->customer_id,
@@ -225,6 +242,7 @@ class PaymentController extends Controller
 
     public function approve(Request $request, Payment $payment): JsonResponse
     {
+        $this->ensureAccountMatch($payment, $request);
         if ($payment->status !== 'pending') {
             return response()->json(['message' => 'สถานะการชำระเงินไม่ถูกต้อง'], 422);
         }
@@ -280,6 +298,7 @@ class PaymentController extends Controller
 
     public function reject(Request $request, Payment $payment): JsonResponse
     {
+        $this->ensureAccountMatch($payment, $request);
         if ($payment->status !== 'pending') {
             return response()->json(['message' => 'สถานะการชำระเงินไม่ถูกต้อง'], 422);
         }
@@ -304,6 +323,7 @@ class PaymentController extends Controller
 
     public function resubmit(Request $request, Payment $payment): JsonResponse
     {
+        $this->ensureAccountMatch($payment, $request);
         if ($payment->status !== 'rejected') {
             return response()->json(['message' => 'สามารถส่งใหม่ได้เฉพาะรายการที่ถูกปฏิเสธ'], 422);
         }

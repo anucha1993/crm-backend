@@ -54,6 +54,8 @@ class RoleSeeder extends Seeder
                 'reports.view',
                 // Settings
                 'settings.view',
+                // Accounts: default ให้เข้าได้ทั้งบิลเงินสดและใบกำกับ (admin ปรับใน UI ภายหลัง)
+                'accounts.cash', 'accounts.tax',
             ]);
         })->pluck('id');
         $sales->permissions()->sync($salesPerms);

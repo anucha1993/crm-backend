@@ -2,13 +2,17 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToAccount;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Quotation extends Model
 {
+    use BelongsToAccount;
+
     protected $fillable = [
+        'account_type',
         'quotation_number',
         'customer_id',
         'customer_address_id',
@@ -71,7 +75,8 @@ class Quotation extends Model
     public static function generateNumber(): string
     {
         $prefix = 'QT-' . date('Ym') . '-';
-        $last = static::where('quotation_number', 'like', $prefix . '%')
+        $last = static::withoutGlobalScope('account')
+            ->where('quotation_number', 'like', $prefix . '%')
             ->orderBy('quotation_number', 'desc')
             ->first();
         $nextNum = $last ? ((int) substr($last->quotation_number, strlen($prefix))) + 1 : 1;

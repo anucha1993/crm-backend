@@ -81,6 +81,10 @@ class PermissionSeeder extends Seeder
                 ['name' => 'settings.view', 'display_name' => 'ดูตั้งค่าบริษัท'],
                 ['name' => 'settings.edit', 'display_name' => 'แก้ไขตั้งค่าบริษัท'],
             ],
+            'accounts' => [
+                ['name' => 'accounts.cash', 'display_name' => 'เข้าถึงบัญชีบิลเงินสด'],
+                ['name' => 'accounts.tax', 'display_name' => 'เข้าถึงบัญชีใบกำกับภาษี'],
+            ],
         ];
 
         $validNames = [];
