@@ -224,7 +224,7 @@ class InvoiceController extends Controller
         $mpdf = new Mpdf([
             'mode' => 'utf-8',
             'format' => 'A4',
-            'default_font' => 'sarabun',
+            'default_font' => 'garuda',
             'margin_top' => 5,
             'margin_bottom' => 55,
             'margin_left' => 8,
@@ -232,21 +232,6 @@ class InvoiceController extends Controller
             'autoLangToFont' => true,
             'autoScriptToLang' => true,
             'tempDir' => storage_path('app/mpdf-temp'),
-            'fontDir' => array_merge(
-                (new \Mpdf\Config\ConfigVariables())->getDefaults()['fontDir'],
-                [storage_path('fonts')]
-            ),
-            'fontdata' => array_merge(
-                (new \Mpdf\Config\FontVariables())->getDefaults()['fontdata'],
-                [
-                    'sarabun' => [
-                        'R' => 'Sarabun-Regular.ttf',
-                        'B' => 'Sarabun-Bold.ttf',
-                        'I' => 'Sarabun-Italic.ttf',
-                        'BI' => 'Sarabun-BoldItalic.ttf',
-                    ],
-                ]
-            ),
         ]);
 
         $mpdf->SetTitle('ใบกำกับภาษี ' . $invoice->invoice_number);

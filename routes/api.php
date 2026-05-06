@@ -47,6 +47,17 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/profile', [ProfileController::class, 'update']);
     Route::put('/profile/password', [ProfileController::class, 'changePassword']);
 
+    // Company Settings
+    Route::middleware('permission:settings.view')->get('/company-settings', [CompanySettingController::class, 'index']);
+    Route::middleware('permission:settings.edit')->group(function () {
+        Route::put('/company-settings', [CompanySettingController::class, 'update']);
+        Route::post('/company-settings/logo', [CompanySettingController::class, 'uploadLogo']);
+        Route::delete('/company-settings/logo', [CompanySettingController::class, 'deleteLogo']);
+        Route::get('/company-settings/slip2go', [CompanySettingController::class, 'getSlip2go']);
+        Route::put('/company-settings/slip2go', [CompanySettingController::class, 'updateSlip2go']);
+        Route::post('/company-settings/slip2go/test', [CompanySettingController::class, 'testSlip2go']);
+    });
+
     // Products & Categories
     Route::middleware('permission:products.view')->group(function () {
         Route::apiResource('products', ProductController::class)->only(['index', 'show']);

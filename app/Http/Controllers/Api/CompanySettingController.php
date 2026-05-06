@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\CompanySetting;
+use App\Services\Slip2goService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -85,5 +86,46 @@ class CompanySettingController extends Controller
         CompanySetting::setValue('logo', null);
 
         return response()->json(['message' => 'ลบโลโก้สำเร็จ']);
+    }
+
+    public function getSlip2go(): JsonResponse
+    {
+        return response()->json([
+            'slip2go_api_url' => CompanySetting::getValue('slip2go_api_url', 'https://connect.slip2go.com'),
+            'slip2go_secret_key' => CompanySetting::getValue('slip2go_secret_key', ''),
+            'slip2go_check_duplicate' => CompanySetting::getValue('slip2go_check_duplicate', 'true'),
+        ]);
+    }
+
+    public function updateSlip2go(Request $request): JsonResponse
+    {
+        $request->validate([
+            'slip2go_api_url' => 'nullable|string|max:255',
+            'slip2go_secret_key' => 'nullable|string|max:500',
+            'slip2go_check_duplicate' => 'nullable|in:true,false',
+        ]);
+
+        foreach (['slip2go_api_url', 'slip2go_secret_key', 'slip2go_check_duplicate'] as $key) {
+            if ($request->has($key)) {
+                CompanySetting::setValue($key, $request->input($key));
+            }
+        }
+
+        return response()->json([
+            'slip2go_api_url' => CompanySetting::getValue('slip2go_api_url', ''),
+            'slip2go_secret_key' => CompanySetting::getValue('slip2go_secret_key', ''),
+            'slip2go_check_duplicate' => CompanySetting::getValue('slip2go_check_duplicate', 'true'),
+        ]);
+    }
+
+    public function testSlip2go(): JsonResponse
+    {
+        $service = new Slip2goService();
+        if (!$service->isConfigured()) {
+            return response()->json(['code' => 'error', 'message' => 'Slip2Go API ยังไม่ได้ตั้งค่า'], 400);
+        }
+
+        $result = $service->getAccountInfo();
+        return response()->json($result);
     }
 }

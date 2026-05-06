@@ -4,13 +4,13 @@
 <meta charset="UTF-8">
 <style>
     body {
-        font-family: sarabun, sans-serif;
+        font-family: garuda, sans-serif;
         font-size: 10pt;
         color: #000;
         line-height: 1.5;
     }
     td, th {
-        font-family: sarabun, sans-serif;
+        font-family: garuda, sans-serif;
     }
     .bordered td, .bordered th {
         border: 1px solid #000;
@@ -170,12 +170,12 @@
                 <td width="50%" style="height: 20mm;">&nbsp;</td>
             </tr>
             <tr>
-                <td width="50%" style="text-align: center; font-family: sarabun, sans-serif;">
+                <td width="50%" style="text-align: center; font-family: garuda, sans-serif;">
                     <span style="font-size: 9pt;">ลงชื่อ</span>
                     <span style="font-size: 9pt;">..........................................................</span><br>
                     <span style="font-size: 10pt;">ผู้รับสินค้า</span>
                 </td>
-                <td width="50%" style="text-align: center; font-family: sarabun, sans-serif;">
+                <td width="50%" style="text-align: center; font-family: garuda, sans-serif;">
                     <span style="font-size: 9pt;">ลงชื่อ</span>
                     <span style="font-size: 9pt;">..........................................................</span><br>
                     <span style="font-size: 10pt;">ผู้รับเงิน</span>

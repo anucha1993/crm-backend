@@ -4,13 +4,13 @@
 <meta charset="UTF-8">
 <style>
     body {
-        font-family: sarabun, sans-serif;
+        font-family: garuda, sans-serif;
         font-size: 10pt;
         color: #000;
         line-height: 1.5;
     }
     td, th {
-        font-family: sarabun, sans-serif;
+        font-family: garuda, sans-serif;
     }
 </style>
 </head>
@@ -168,16 +168,16 @@
 
     {{-- ===== หมายเหตุการรับสินค้า (Footer - อยู่ล่างเสมอ) ===== --}}
     <htmlpagefooter name="deliveryfooter">
-        <div style="font-size: 8pt; margin-bottom: 4px; color: #333; font-family: sarabun, sans-serif;">
+        <div style="font-size: 8pt; margin-bottom: 4px; color: #333; font-family: garuda, sans-serif;">
             <b>หมายเหตุการรับสินค้า :</b> กรุณาตรวจสอบความถูกต้องของสินค้าและเซ็นรับสินค้าใบวันที่ได้รับ
         </div>
-        <div style="font-size: 8pt; margin-bottom: 12px; color: #333; font-family: sarabun, sans-serif;">
+        <div style="font-size: 8pt; margin-bottom: 12px; color: #333; font-family: garuda, sans-serif;">
             หากไม่มีการตรวจสอบหรือเซ็นรับสินค้า ทางบริษัทขอสงวนสิทธิ์ในการรับผิดชอบต่อความผิดพลาดทุกกรณี
         </div>
          <br>
         <table width="100%" cellpadding="0" cellspacing="0">
             <tr>
-                <td width="50%" style="text-align: center; font-family: sarabun, sans-serif;">
+                <td width="50%" style="text-align: center; font-family: garuda, sans-serif;">
                     <div style="font-size: 9pt;">
                         ลงชื่อผู้รับสินค้า.......................................................ผู้รับสินค้า
                     </div>
@@ -186,7 +186,7 @@
                         วันที่ ........./........../..........
                     </div>
                 </td>
-                <td width="50%" style="text-align: center; font-family: sarabun, sans-serif;">
+                <td width="50%" style="text-align: center; font-family: garuda, sans-serif;">
                     <div style="font-size: 9pt;">
                         ลงชื่อผู้ส่งสินค้า.......................................................ผู้ส่งสินค้า
                     </div>

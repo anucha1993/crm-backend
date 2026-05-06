@@ -4,13 +4,13 @@
 <meta charset="UTF-8">
 <style>
     body {
-        font-family: sarabun, sans-serif;
+        font-family: garuda, sans-serif;
         font-size: 11pt;
         color: #1a1a1a;
         line-height: 1.6;
     }
     td, th {
-        font-family: sarabun, sans-serif;
+        font-family: garuda, sans-serif;
     }
     .text-center { text-align: center; }
     .text-right { text-align: right; }
@@ -231,7 +231,7 @@
                 <td width="50%" style="height: 25mm;">&nbsp;</td>
             </tr>
             <tr>
-                <td width="50%" style="text-align: center; font-family: sarabun, sans-serif;">
+                <td width="50%" style="text-align: center; font-family: garuda, sans-serif;">
                     <div style="width: 200px; border-bottom: 1px solid #9ca3af; margin: 0 auto 5px auto;">&nbsp;</div>
                     <span style="font-size: 10pt; color: #555;">ผู้เสนอราคา</span><br>
                     <br>
@@ -241,7 +241,7 @@
                     @endif
                     <span style="font-size: 8pt; color: #9ca3af;">วันที่ {{ $createdDate }}</span>
                 </td>
-                <td width="50%" style="text-align: center; font-family: sarabun, sans-serif;">
+                <td width="50%" style="text-align: center; font-family: garuda, sans-serif;">
                     <div style="width: 200px; border-bottom: 1px solid #9ca3af; margin: 0 auto 5px auto;">&nbsp;</div>
                     <span style="font-size: 10pt; color: #555;">ผู้อนุมัติ</span><br>
                     <br>
@@ -254,7 +254,7 @@
         </table>
         <table width="100%" cellpadding="0" cellspacing="0" style="margin-top: 5px;">
             <tr>
-                <td style="text-align: center; font-size: 8pt; color: #9ca3af; font-family: sarabun, sans-serif;">
+                <td style="text-align: center; font-size: 8pt; color: #9ca3af; font-family: garuda, sans-serif;">
                     หน้า {PAGENO}/{nbpg}
                 </td>
             </tr>
