@@ -81,7 +81,6 @@
                             @endif
                             <span style="font-size: 8pt; color: #555;">
                                 @if($quotation->customer?->phone)โทร: {{ $quotation->customer->phone }}@endif
-                                @if($quotation->customer?->email)&nbsp;&nbsp;{{ $quotation->customer->email }}@endif
                             </span>
                             @if($quotation->customer?->tax_id)
                                 <br><span style="font-size: 8pt; color: #555;">เลขผู้เสียภาษี: {{ $quotation->customer->tax_id }}</span>

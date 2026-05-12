@@ -162,6 +162,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // Invoices
         Route::middleware('permission:invoices.view')->group(function () {
+            Route::get('/invoices/pending', [InvoiceController::class, 'pending']);
             Route::get('/invoices', [InvoiceController::class, 'index']);
             Route::get('/invoices/{invoice}', [InvoiceController::class, 'show']);
         });

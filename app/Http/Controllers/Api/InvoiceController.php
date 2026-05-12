@@ -150,6 +150,89 @@ class InvoiceController extends Controller
         return response()->json(['invoice' => $invoice], 201);
     }
 
+    /**
+     * List orders that are fully paid in the current account scope,
+     * showing whether an invoice (tax invoice / cash bill) has been issued.
+     * Reference date = latest approved payment's approved_at.
+     */
+    public function pending(Request $request): JsonResponse
+    {
+        $accountType = $request->attributes->get('account_type');
+
+        $query = Order::query()
+            ->where('account_type', $accountType)
+            ->where('status', '!=', 'cancelled')
+            ->whereRaw('CAST(remaining_amount AS DECIMAL(15,2)) <= 0')
+            ->whereRaw('CAST(paid_amount AS DECIMAL(15,2)) > 0')
+            ->with([
+                'customer:id,code,name,tax_id,phone',
+                'invoices' => fn ($q) => $q->where('status', 'issued')
+                    ->select('id', 'order_id', 'invoice_number', 'issue_date'),
+            ])
+            ->withMax(['payments as last_paid_at' => fn ($q) => $q->where('status', 'approved')], 'approved_at');
+
+        // Filter by month of latest approved payment (YYYY-MM)
+        if ($request->filled('month')) {
+            $month = $request->month;
+            $query->whereHas('payments', function ($q) use ($month) {
+                $q->where('status', 'approved')
+                  ->whereRaw("DATE_FORMAT(approved_at, '%Y-%m') = ?", [$month]);
+            });
+        }
+
+        if ($request->filled('search')) {
+            $s = $request->search;
+            $query->where(function ($q) use ($s) {
+                $q->where('order_number', 'like', "%{$s}%")
+                  ->orWhereHas('customer', fn ($cq) => $cq->where('name', 'like', "%{$s}%")
+                      ->orWhere('code', 'like', "%{$s}%"));
+            });
+        }
+
+        $orders = $query->orderByDesc('last_paid_at')->get();
+
+        $rows = $orders->map(function ($order) {
+            $invoice = $order->invoices->first();
+            return [
+                'order_id' => $order->id,
+                'order_number' => $order->order_number,
+                'customer' => $order->customer ? [
+                    'id' => $order->customer->id,
+                    'code' => $order->customer->code,
+                    'name' => $order->customer->name,
+                    'tax_id' => $order->customer->tax_id,
+                    'phone' => $order->customer->phone,
+                ] : null,
+                'total' => (float) $order->total,
+                'paid_amount' => (float) $order->paid_amount,
+                'last_paid_at' => $order->last_paid_at,
+                'invoice_issued' => (bool) $invoice,
+                'invoice' => $invoice ? [
+                    'id' => $invoice->id,
+                    'invoice_number' => $invoice->invoice_number,
+                    'issue_date' => $invoice->issue_date,
+                ] : null,
+            ];
+        });
+
+        // Optional status filter (issued / pending) applied after map
+        if ($request->filled('issued')) {
+            $want = $request->issued === '1' || $request->issued === 'true';
+            $rows = $rows->filter(fn ($r) => $r['invoice_issued'] === $want)->values();
+        }
+
+        $summary = [
+            'total' => $rows->count(),
+            'issued' => $rows->where('invoice_issued', true)->count(),
+            'pending' => $rows->where('invoice_issued', false)->count(),
+        ];
+
+        return response()->json([
+            'data' => $rows,
+            'summary' => $summary,
+        ]);
+    }
+
     public function cancel(Request $request, Invoice $invoice): JsonResponse
     {
         $this->ensureAccountMatch($invoice, $request);

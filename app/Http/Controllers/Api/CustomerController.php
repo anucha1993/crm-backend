@@ -45,19 +45,17 @@ class CustomerController extends Controller
     {
         $request->validate([
             'name' => 'required|string|max:255|unique:customers,name',
-            'type' => 'required|in:regular,general',
+            'type' => 'nullable|in:regular,general',
             'customer_level_id' => 'nullable|exists:customer_levels,id',
             'tax_id' => 'nullable|string|max:20|unique:customers,tax_id',
             'contact_name' => 'nullable|string|max:255',
             'phone' => 'nullable|string|max:50',
-            'email' => 'nullable|email|max:255',
-            'line_id' => 'nullable|string|max:100',
             'address' => 'nullable|string',
             'shipping_addresses' => 'nullable|array',
             'shipping_addresses.*.label' => 'nullable|string|max:255',
             'shipping_addresses.*.contact_name' => 'nullable|string|max:255',
             'shipping_addresses.*.phone' => 'nullable|string|max:50',
-            'shipping_addresses.*.address' => 'required|string',
+            'shipping_addresses.*.address' => 'nullable|string',
             'shipping_addresses.*.is_default' => 'nullable|boolean',
         ]);
 
@@ -100,15 +98,13 @@ class CustomerController extends Controller
             'tax_id' => ['nullable', 'string', 'max:20', Rule::unique('customers', 'tax_id')->ignore($customer->id)],
             'contact_name' => 'nullable|string|max:255',
             'phone' => 'nullable|string|max:50',
-            'email' => 'nullable|email|max:255',
-            'line_id' => 'nullable|string|max:100',
             'address' => 'nullable|string',
             'shipping_addresses' => 'nullable|array',
             'shipping_addresses.*.id' => 'nullable|integer',
             'shipping_addresses.*.label' => 'nullable|string|max:255',
             'shipping_addresses.*.contact_name' => 'nullable|string|max:255',
             'shipping_addresses.*.phone' => 'nullable|string|max:50',
-            'shipping_addresses.*.address' => 'required|string',
+            'shipping_addresses.*.address' => 'nullable|string',
             'shipping_addresses.*.is_default' => 'nullable|boolean',
         ]);
 

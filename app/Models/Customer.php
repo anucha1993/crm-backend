@@ -16,8 +16,6 @@ class Customer extends Model
         'tax_id',
         'contact_name',
         'phone',
-        'email',
-        'line_id',
         'address',
         'pocket_money',
         'last_activity_at',
