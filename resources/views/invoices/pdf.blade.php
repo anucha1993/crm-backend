@@ -5,185 +5,248 @@
 <style>
     body {
         font-family: garuda, sans-serif;
-        font-size: 10pt;
+        font-size: 11pt;
         color: #000;
-        line-height: 1.5;
+        line-height: 1.35;
     }
-    td, th {
-        font-family: garuda, sans-serif;
+    p, h3, h4, h5, h6, td, th, div, span, b, strong, small, address {
+        margin: 0 !important;
+        padding: 0 !important;
+        line-height: 1.35 !important;
     }
-    .bordered td, .bordered th {
-        border: 1px solid #000;
+    address { font-style: normal; }
+    .table {
+        border-collapse: collapse;
+        width: 100%;
     }
+    .table th, .table td {
+        border: 1px solid #dee2e6 !important;
+        padding: 6px 8px !important;
+        font-size: 9pt;
+        vertical-align: middle;
+    }
+    .table th {
+        text-align: center;
+        font-weight: bold;
+        padding: 8px 6px !important;
+        background-color: #f8f9fa;
+    }
+    .text-center { text-align: center !important; }
+    .text-end { text-align: right !important; }
+    .text-muted { color: #6c757d; }
+    .fs-13 { font-size: 13pt; }
+    .fs-12 { font-size: 12pt; }
+    .fs-11 { font-size: 11pt; }
+    .fs-10 { font-size: 10pt; }
+    .fs-9 { font-size: 9pt; }
+    hr { border: none; border-top: 1px solid #000; margin: 8px 0 !important; }
 </style>
 </head>
 <body>
 
-    {{-- ===== Document Title (centered) ===== --}}
-    <div style="text-align: center; font-size: 14pt; font-weight: bold; margin-bottom: 8px;">
-        {{ $isVat ? 'ใบเสร็จรับเงิน / ใบกำกับภาษี' : 'ใบเสร็จรับเงิน / บิลเงินสด' }}
-    </div>
+@php
+    $perPage = 15;
+    $lastPageMax = 8;
+    $items = $invoice->items;
+    $total = $items->count();
+    if ($total <= $perPage) {
+        $chunks = collect([$items]);
+    } else {
+        // Reserve last page for totals
+        $lastCount = min($lastPageMax, $total);
+        $remaining = $total - $lastCount;
+        $priorPages = (int) ceil($remaining / $perPage);
+        // Distribute remaining evenly across prior pages
+        $base = intdiv($remaining, $priorPages);
+        $extra = $remaining % $priorPages;
+        $chunks = collect();
+        $offset = 0;
+        for ($i = 0; $i < $priorPages; $i++) {
+            $size = $base + ($i < $extra ? 1 : 0);
+            $chunks->push($items->slice($offset, $size)->values());
+            $offset += $size;
+        }
+        $chunks->push($items->slice($offset, $lastCount)->values());
+    }
+    $totalPages = max(1, $chunks->count());
+    $title = $isVat ? 'ใบกำกับภาษี / Tax Invoice' : 'ใบเสร็จรับเงิน / Receipt';
+    $loopIndex = 1;
+@endphp
 
-    {{-- ===== Company Info + Invoice Number ===== --}}
-    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 6px;">
+@foreach($chunks as $chunkIndex => $chunk)
+
+    {{-- ===== Header: Logo + Title | QR + Page ===== --}}
+    <table width="100%" cellpadding="0" cellspacing="0">
         <tr>
-            <td valign="top">
-              
-                <span style="font-size: 12pt; font-weight: bold;">{{ $company['name'] ?? 'บริษัท' }}</span>
-                @if(!empty($company['branch']))
-                    <span style="font-size: 10pt;"> ({{ $company['branch'] }})</span>
+            <td valign="top" width="60%">
+                @if($logoPath)
+                    <img src="{{ $logoPath }}" height="60" />
                 @endif
-                <br>
-                @if(!empty($company['address']))
-                    <span style="font-size: 9pt;">ที่อยู่: {{ $company['address'] }}</span><br>
-                @endif
-                @if(!empty($company['phone']))
-                    <span style="font-size: 9pt;">โทร: {{ $company['phone'] }}</span><br>
-                @endif
-                <span style="font-size: 9pt;">
-
-                    @if(!empty($company['tax_id'])) สาขา/Branch สำนักงานใหญ่ เลขประจำตัวผู้เสียภาษี/Tax ID: {{ $company['tax_id'] }}@endif
-                </span>
+                <h3 class="fs-13" style="margin-top: 8px !important;"><b>{{ $title }}</b></h3>
             </td>
-            <td width="180" valign="top" style="text-align: right;">
-                <span style="font-size: 10pt;">เลขที่ {{ $invoice->invoice_number }}</span>
+            <td valign="top" width="40%" style="text-align: right;">
+             
+                <barcode code="{{ $qrData }}" type="QR" size="0.9" error="L" />
+                <table width="100%" cellpadding="0" cellspacing="0"><tr><td >&nbsp;</td>
+                </tr><tr><td class="fs-9" style="text-align:right;">หน้า {{ $chunkIndex + 1 }}/{{ $totalPages }}</td></tr></table>
             </td>
         </tr>
     </table>
-    <br>
 
-    {{-- <hr style="border: none; border-top: 1px solid #000; margin: 4px 0 8px 0;"> --}}
-
-    {{-- ===== Customer Info + Date ===== --}}
-    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 10px;">
+    {{-- ===== Company + Document Meta ===== --}}
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-top: 10px !important;">
         <tr>
-            <td valign="top">
-                <span style="font-size: 10pt;">ได้รับเงินจาก: <b>{{ $invoice->customer->name ?? '-' }}</b></span><br>
-                @if($invoice->customer?->address)
-                    <span style="font-size: 9pt;">ที่อยู่: {{ $invoice->customer->address }}</span><br>
-                @endif
-                @if($invoice->shippingAddress && $invoice->shippingAddress->address !== ($invoice->customer?->address ?? ''))
-                    <span style="font-size: 9pt;">{{ $invoice->shippingAddress->address }}</span><br>
-                @endif
-                @if($invoice->customer?->tax_id && $isVat)
-                    <span style="font-size: 9pt;">เลขประจำตัวผู้เสียภาษีอากร: {{ $invoice->customer->tax_id }}</span>
+            <td valign="top" width="60%">
+                <div class="fs-11"><b>{{ $company['name'] ?? 'บริษัท' }}@if(!empty($company['branch'])) ({{ $company['branch'] }})@endif</b></div>
+                <div class="fs-10" style="margin-top: 4px !important;">
+                    @if(!empty($company['address']))ที่อยู่ {{ $company['address'] }}@endif
+                    @if(!empty($company['phone'])) โทร {{ $company['phone'] }}@endif
+                </div>
+                @if(!empty($company['tax_id']))
+                    <div class="fs-10">เลขประจำตัวผู้เสียภาษี {{ $company['tax_id'] }}</div>
                 @endif
             </td>
-            <td width="160" valign="top" style="text-align: right;">
-                <span style="font-size: 10pt;">วันที่ {{ $issueDate }}</span>
+            <td valign="top" width="40%" style="text-align: right;">
+                <div class="fs-10"><b>วันที่: </b>{{ $issueDate }}</div>
+                <div class="fs-10"><b>เลขที่: </b>{{ $invoice->invoice_number }}</div>
+                @if($invoice->creator)
+                    <div class="fs-10"><b>ชื่อผู้ขาย (Sale): </b>{{ $invoice->creator->name }}</div>
+                @endif
+            </td>
+        </tr>
+    </table>
+
+    <hr>
+
+    {{-- ===== Customer + Shipping ===== --}}
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-top: 8px !important;">
+        <tr>
+            <td valign="top" width="50%">
+                <h4 class="fs-12"><b>ข้อมูลลูกค้า</b></h4>
+                <address class="fs-10" style="margin-top: 4px !important;">
+                    {{ $invoice->customer->name ?? '-' }}<br>
+                    @if($invoice->customer?->address){{ $invoice->customer->address }}@endif
+                    @if($invoice->customer?->phone)<br>โทร {{ $invoice->customer->phone }}@endif
+                    @if($invoice->customer?->tax_id && $isVat)<br>เลขประจำตัวผู้เสียภาษี {{ $invoice->customer->tax_id }}@endif
+                </address>
+            </td>
+            <td valign="top" width="50%">
+                <h4 class="fs-12"><b>ที่อยู่จัดส่ง</b></h4>
+                <address class="fs-10" style="margin-top: 4px !important;">
+                    @if($invoice->shippingAddress)
+                        @if($invoice->shippingAddress->contact_name || $invoice->shippingAddress->phone)
+                            {{ $invoice->shippingAddress->contact_name ?? '' }}@if($invoice->shippingAddress->phone) ({{ $invoice->shippingAddress->phone }})@endif<br>
+                        @endif
+                        {{ $invoice->shippingAddress->address }}
+                    @else
+                        {{ $invoice->customer->name ?? '' }}<br>
+                        @if($invoice->customer?->address){{ $invoice->customer->address }}<br>@endif
+                        @if($invoice->customer?->phone)(+66) {{ $invoice->customer->phone }}@endif
+                    @endif
+                </address>
             </td>
         </tr>
     </table>
 
     {{-- ===== Items Table ===== --}}
-    <table width="100%" cellpadding="4" cellspacing="0" style="border-collapse: collapse; margin-bottom: 0;">
+    <br>
+    <table class="table" style="margin-top: 13px !important; font-size: 10pt;">
         <thead>
             <tr>
-                <th width="35" style="text-align: center; font-size: 9pt; padding: 5px; border: 1px solid #000;">ลำดับ</th>
-                <th width="50" style="text-align: center; font-size: 9pt; padding: 5px; border: 1px solid #000;">จำนวน</th>
-                <th width="50" style="text-align: center; font-size: 9pt; padding: 5px; border: 1px solid #000;">หน่วยนับ</th>
-                <th style="text-align: center; font-size: 9pt; padding: 5px; border: 1px solid #000;">รายการสินค้า</th>
-                <th width="110" style="text-align: center; font-size: 9pt; padding: 5px; border: 1px solid #000;">ราคาต่อหน่วย</th>
-                <th width="95" style="text-align: center; font-size: 9pt; padding: 5px; border: 1px solid #000;">{{ $isVat ? 'จำนวนเงินไม่รวมภาษี' : 'จำนวนเงิน' }}</th>
+                <th width="30">ลำดับ</th>
+                <th width="50">จำนวน</th>
+                <th width="65">หน่วยนับ</th>
+                <th>รายการสินค้า</th>
+                <th width="75">ความยาว</th>
+                <th width="95">ราคาต่อหน่วย</th>
+                <th width="100" class="text-end">จำนวนเงินรวม</th>
             </tr>
         </thead>
         <tbody>
-            @foreach($invoice->items as $i => $item)
+            @foreach($chunk as $item)
+                @php
+                    $rawUnit = trim((string)($item->unit ?? ''));
+                    $productUnit = trim((string)($item->product->unit ?? ''));
+                    $isSheet = in_array($rawUnit, ['แผ่น', 'ตรม.', 'ตรม']) || $productUnit === 'แผ่น';
+                    $displayUnit = $isSheet ? 'ตรม.' : $rawUnit;
+                    $lengthUnitRaw = $item->product?->sizes?->first()?->length_unit ?? '';
+                    $displayLengthUnit = $isSheet ? 'ตรม.' : $lengthUnitRaw;
+                @endphp
                 <tr>
-                    <td style="text-align: center; font-size: 9pt; border-left: 1px solid #000; border-right: 1px solid #000;">{{ $i + 1 }}</td>
-                    <td style="text-align: right; font-size: 9pt; border-right: 1px solid #000; padding-right: 6px;">{{ number_format((float)$item->quantity, 2) }}</td>
-                    <td style="text-align: center; font-size: 9pt; border-right: 1px solid #000;">{{ $item->unit }}</td>
-                    <td style="font-size: 9pt; border-right: 1px solid #000; padding-left: 6px;">
-                        @if($item->product)
-                            {{ $item->product->name }}
-                        @endif
-                        @if($item->length)
-                            &nbsp;&nbsp;&nbsp;ยาว {{ number_format((float)$item->length, 2) }} {{ $item->product?->sizes?->first()?->length_unit ?? 'เมตร' }}
-                        @endif
-                        {{-- @if($item->description)
-                            <br><span style="font-size: 8pt; color: #333;">({{ $item->description }})</span>
-                        @endif --}}
+                    <td class="text-center">{{ $loopIndex++ }}</td>
+                    <td class="text-center">{{ number_format((float)$item->quantity) }}</td>
+                    <td class="text-center">{{ $displayUnit }}</td>
+                    <td>
+                        <b>{{ $item->product->name ?? $item->description }}</b>
+                        ({{ number_format((float)$item->unit_price, 2) }}/{{ $displayLengthUnit ?: $displayUnit }})
+                        @if($item->description && $item->product)<br><span class="fs-9">{{ $item->description }}</span>@endif
                     </td>
-                    <td style="text-align: right; font-size: 9pt; border-right: 1px solid #000; padding-right: 6px;">{{ number_format((float)$item->unit_price, 2) }} /{{ $item->product?->sizes?->first()?->length_unit ?? $item->unit }}</td>
-                    <td style="text-align: right; font-size: 9pt; border-right: 1px solid #000; padding-right: 6px;">{{ number_format((float)$item->amount, 2) }}</td>
+                    <td class="text-center">{{ $item->length ? number_format((float)$item->length, 2) . ' ' . $displayLengthUnit : '-' }}</td>
+                    <td class="text-center">{{ number_format((float)$item->unit_price * (float)($item->length ?: 1), 2) }}/{{ $displayUnit }}</td>
+                    <td class="text-end">{{ number_format((float)$item->amount, 2) }}</td>
                 </tr>
             @endforeach
-            {{-- Empty rows to fill table --}}
-            @for($j = count($invoice->items); $j < 22; $j++)
-                <tr>
-                    <td style="border-left: 1px solid #000; border-right: 1px solid #000; height: 18px;">&nbsp;</td>
-                    <td style="border-right: 1px solid #000;">&nbsp;</td>
-                    <td style="border-right: 1px solid #000;">&nbsp;</td>
-                    <td style="border-right: 1px solid #000;">&nbsp;</td>
-                    <td style="border-right: 1px solid #000;">&nbsp;</td>
-                    <td style="border-right: 1px solid #000;">&nbsp;</td>
-                </tr>
-            @endfor
-            {{-- Bottom border + Summary rows --}}
-            <tr>
-                <td colspan="4" style="border-top: 1px solid #000; padding: 0;"></td>
-                <td style="border: 1px solid #000; font-size: 9pt; padding: 4px 8px; text-align: right;">รวมเงิน</td>
-                <td style="border: 1px solid #000; font-size: 9pt; text-align: right; padding: 4px 8px;">{{ number_format((float)$invoice->subtotal, 2) }}</td>
-            </tr>
-            <tr>
-                <td colspan="4" style="padding: 0;"></td>
-                <td style="border: 1px solid #000; font-size: 9pt; padding: 4px 8px; text-align: right;">ส่วนลด{{ $invoice->discount_type === 'percent' ? ' (' . (float)$invoice->discount_value . '%)' : '' }}</td>
-                <td style="border: 1px solid #000; font-size: 9pt; text-align: right; padding: 4px 8px;">{{ (float)$invoice->discount_amount > 0 ? number_format((float)$invoice->discount_amount, 2) : '' }}</td>
-            </tr>
-            <tr>
-                <td colspan="4" style="padding: 0;"></td>
-                <td style="border: 1px solid #000; font-size: 9pt; padding: 4px 8px; text-align: right;">เงินหลังหักส่วนลด</td>
-                <td style="border: 1px solid #000; font-size: 9pt; text-align: right; padding: 4px 8px;">{{ number_format((float)$invoice->subtotal - (float)$invoice->discount_amount, 2)}}</td>
-            </tr>
-            @if($isVat)
-            <tr>
-                <td colspan="4" style="padding: 0;"></td>
-                <td style="border: 1px solid #000; font-size: 9pt; padding: 4px 8px; text-align: right;">ภาษีมูลค่าเพิ่ม {{ rtrim(rtrim(number_format((float)$invoice->vat_rate, 2), '0'), '.') }}%</td>
-                <td style="border: 1px solid #000; font-size: 9pt; text-align: right; padding: 4px 8px;">{{ number_format((float)$invoice->vat_amount, 2) }}</td>
-            </tr>
-            @endif
-            <tr>
-                <td colspan="4" style="padding: 0;"></td>
-                <td style="border: 1px solid #000; font-size: 10pt; font-weight: bold; padding: 4px 8px;">ยอดเงินสุทธิ</td>
-                <td style="border: 1px solid #000; font-size: 10pt; font-weight: bold; text-align: right; padding: 4px 8px;">{{ number_format((float)$invoice->total, 2) }}</td>
-            </tr>
         </tbody>
     </table>
 
-    {{-- ===== Thai Baht Text ===== --}}
-    <div style="font-size: 9pt; margin-top: 8px;">
-        จำนวนเงินรวมทั้งสิ้น (ตัวอักษร) <b>({{ $bahtText }})</b>
-    </div>
-
-    {{-- ===== Notes ===== --}}
-    @if($invoice->notes)
-        <div style="font-size: 9pt; margin-top: 6px; color: #333;">
-            หมายเหตุ: {{ $invoice->notes }}
-        </div>
-    @endif
-
-    {{-- ===== Signature Footer ===== --}}
-    <htmlpagefooter name="sigfooter">
+    {{-- ===== Footer: Notes + Totals (LAST page only) ===== --}}
+    @if($chunkIndex === $totalPages - 1)
+        <br>
         <table width="100%" cellpadding="0" cellspacing="0">
             <tr>
-                <td width="50%" style="height: 20mm;">&nbsp;</td>
-                <td width="50%" style="height: 20mm;">&nbsp;</td>
-            </tr>
-            <tr>
-                <td width="50%" style="text-align: center; font-family: garuda, sans-serif;">
-                    <span style="font-size: 9pt;">ลงชื่อ</span>
-                    <span style="font-size: 9pt;">..........................................................</span><br>
-                    <span style="font-size: 10pt;">ผู้รับสินค้า</span>
+                <td valign="top" width="55%">
+                    <h6 class="fs-10 text-muted">หมายเหตุ:</h6>
+                    <small class="fs-10">{{ $invoice->notes }}</small>
                 </td>
-                <td width="50%" style="text-align: center; font-family: garuda, sans-serif;">
-                    <span style="font-size: 9pt;">ลงชื่อ</span>
-                    <span style="font-size: 9pt;">..........................................................</span><br>
-                    <span style="font-size: 10pt;">ผู้รับเงิน</span>
+                <td valign="top" width="45%">
+                    <table width="100%" cellpadding="0" cellspacing="0">
+                        <tr>
+                            <td class="fs-10"><b>จำนวนเงินรวม :</b></td>
+                            <td class="fs-10 text-end">{{ number_format((float)$invoice->subtotal, 2) }}</td>
+                        </tr>
+                        <tr>
+                            <td class="fs-10"><b>ส่วนลด:</b></td>
+                            <td class="fs-10 text-end">{{ number_format((float)$invoice->discount_amount, 2) }}</td>
+                        </tr>
+                        @if($isVat)
+                            <tr>
+                                <td class="fs-10"><b>ภาษีมูลค่าเพิ่ม:</b></td>
+                                <td class="fs-10 text-end">{{ number_format((float)$invoice->vat_amount, 2) }}</td>
+                            </tr>
+                        @endif
+                        <tr>
+                            <td class="fs-11"><b>จำนวนเงินทั้งสิ้น: &nbsp;</b></td>
+                            <td class="fs-11 text-end"><b>{{ number_format((float)$invoice->total, 2) }}</b></td>
+                        </tr>
+                    </table>
                 </td>
             </tr>
         </table>
-    </htmlpagefooter>
-    <sethtmlpagefooter name="sigfooter" value="on" />
+
+        <hr>
+
+        <table width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+                <td valign="top" width="55%">
+                    <span class="fs-10">หมายเหตุ:เงื่อนไขการชำระเงิน</span><br>
+                    <span class="fs-10">1. โอนก่อนจัดส่งสินค้า</span><br>
+                    <span class="fs-10">2. ชำระเป็นเงินสด เมื่อตรวจรับสินค้าเรียบร้อย</span>
+                </td>
+                <td valign="top" width="45%" style="text-align: center;">
+                    <div style="height: 4mm;">&nbsp;</div>
+                    <span class="fs-10">ผู้รับเงิน</span><br>
+                    @if($invoice->creator)
+                        <span class="fs-10">{{ $invoice->creator->name }}</span>
+                    @endif
+                </td>
+            </tr>
+        </table>
+    @endif
+
+    @if($chunkIndex < $totalPages - 1)
+        <pagebreak />
+    @endif
+@endforeach
 
 </body>
 </html>

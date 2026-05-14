@@ -24,54 +24,50 @@
 
     {{-- ===== Header ===== --}}
     {{-- ===== Header: Company + QR ===== --}}
-    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 0px;">
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 0;">
         <tr>
             <td valign="top">
                 @if($logoPath)
-                    <img src="{{ $logoPath }}" height="55" /><br>
+                    <img src="{{ $logoPath }}" height="48" style="margin-bottom:0;" />
                 @endif
-                <span style="font-size: 14pt; font-weight: bold;">{{ $company['name'] ?? 'บริษัท' }}</span><br>
+                <span style="font-size: 13pt; font-weight: bold;">{{ $company['name'] ?? 'บริษัท' }}</span>
                 @if(!empty($company['address']))
-                    <span style="font-size: 8pt; color: #555;">{{ $company['address'] }}</span><br>
+                    <br><span style="font-size: 7pt; color: #555;">{{ $company['address'] }}</span>
                 @endif
                 @if(!empty($company['tax_id']))
-                    <span style="font-size: 8pt; color: #555;">เลขผู้เสียภาษี: {{ $company['tax_id'] }}</span>
+                    <br><span style="font-size: 7pt; color: #555;">เลขผู้เสียภาษี: {{ $company['tax_id'] }}</span>
                 @endif
-                <span style="font-size: 8pt; color: #555;">
+                <br><span style="font-size: 7pt; color: #555;">
                     @if(!empty($company['phone']))โทร: {{ $company['phone'] }}@endif
                     @if(!empty($company['fax']))&nbsp;&nbsp;แฟกซ์: {{ $company['fax'] }}@endif
                     @if(!empty($company['email']))&nbsp;&nbsp;{{ $company['email'] }}@endif
-                </span><br>
+                </span>
             </td>
-            <td width="180" valign="top" style="text-align: right;">
-                <barcode code="{{ $qrData }}" type="QR" size="0.8" error="L" style="margin-bottom: 5px;" />
-                
-                <br>
-                <span style="font-size: 9pt; color: #555;"><b>วันที่:</b> {{ $createdDate }}</span><br>
-                <span style="font-size: 9pt; color: #555;"><b>เลขที่:</b> {{ $quotation->quotation_number }}</span>
-                @if($quotation->revision_number > 0)
-                    <span style="font-size: 8pt; color: #2563eb; font-weight: bold;">&nbsp;Rev.{{ str_pad($quotation->revision_number, 2, '0', STR_PAD_LEFT) }}</span>
+            <td width="160" valign="top" style="text-align: right;">
+                <barcode code="{{ $qrData }}" type="QR" size="0.7" error="L" style="margin-bottom: 0;" />
+                <div style="font-size: 8pt; color: #555; margin-bottom:0; margin-top:2px;"><b>วันที่:</b> {{ $createdDate }}</div>
+                <div style="font-size: 8pt; color: #555; margin-bottom:0;"><b>เลขที่:</b> {{ $quotation->quotation_number }}@if($quotation->revision_number > 0)<span style="font-size: 7pt; color: #2563eb; font-weight: bold;">&nbsp;Rev.{{ str_pad($quotation->revision_number, 2, '0', STR_PAD_LEFT) }}</span>@endif</div>
+                @if($quotation->valid_until)
+                    @php $isExpired = \Carbon\Carbon::parse($quotation->valid_until)->endOfDay()->isPast(); @endphp
+                    <div style="font-size: 8pt; color: {{ $isExpired ? '#dc2626' : '#555' }}; margin-bottom:0;"><b>ยืนราคาถึง:</b> {{ \Carbon\Carbon::parse($quotation->valid_until)->locale('th')->translatedFormat('d M Y') }}@if($isExpired)<span style="font-size: 8pt; color: #dc2626; font-weight: bold;">&nbsp;(เลยกำหนด)</span>@endif</div>
                 @endif
-                <br>
                 @if($quotation->creator)
-                    <span style="font-size: 9pt; color: #555;"><b>ชื่อผู้ขาย (Sale):</b> {{ $quotation->creator->name }}</span>
+                    <div style="font-size: 8pt; color: #555; margin-bottom:0;"><b>ชื่อผู้ขาย (Sale):</b> {{ $quotation->creator->name }}</div>
                 @endif
             </td>
         </tr>
     </table>
 
     {{-- ===== Document Title (centered) ===== --}}
-    <div style="text-align: center; font-size: 16pt; font-weight: bold; margin-bottom: 0px;">
-        {{ $isVat ? 'ใบเสนอราคา / ใบกำกับภาษี' : 'ใบเสนอราคา / Quotation' }}
+    <div style="text-align: center; font-size: 14pt; font-weight: bold; margin-bottom: 0; margin-top: 0; padding: 0;">
+        {{ 'ใบเสนอราคา / Quotation' }}
     </div>
-
-    <hr style="border: none; border-top: 2px solid #1a1a1a; margin-bottom: 12px;">
-
+    <hr style="border: none; border-top: 2px solid #1a1a1a; margin-bottom: 4px; margin-top: 2px;">
     {{-- ===== Customer & Shipping Info ===== --}}
-    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 12px;">
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 2px;">
         <tr>
             <td width="48%" valign="top">
-                <table width="100%" cellpadding="8" cellspacing="0" style="">
+                <table width="100%" cellpadding="2" cellspacing="0" style="margin-bottom:0;">
                     <tr>
                         <td>
                             <span style="font-size: 8pt; font-weight: bold; color: #888;">ลูกค้า</span><br>
@@ -92,7 +88,7 @@
             <td width="4%"></td>
             <td width="48%" valign="top">
                 @if($quotation->shippingAddress)
-                <table width="100%" cellpadding="8" cellspacing="0" style="margin-top: 6px;">
+                <table width="100%" cellpadding="2" cellspacing="0" style="margin-top: 0; margin-bottom:0;">
                     <tr>
                         <td>
                             <span style="font-size: 8pt; font-weight: bold; color: #888;">ที่อยู่จัดส่ง</span><br>
@@ -115,43 +111,46 @@
     </table>
 
     {{-- ===== Items Table ===== --}}
-    <table width="100%" cellpadding="5" cellspacing="0" style="border-collapse: collapse; margin-bottom: 9px;">
+    <table width="100%" cellpadding="2" cellspacing="0" style="border-collapse: collapse; margin-bottom: 0;">
         <thead>
             <tr style="background-color: #1f2937; color: #ffffff;">
-                <th width="25" style="text-align: center; font-size: 8pt; padding: 6px; color: #ffffff;">#</th>
-                <th width="45" style="text-align: right; font-size: 8pt; padding: 6px; color: #ffffff;">จำนวน</th>
-                <th width="45" style="text-align: center; font-size: 8pt; padding: 6px; color: #ffffff;">หน่วย</th>
-                <th style="text-align: left; font-size: 8pt; padding: 6px; color: #ffffff;">รายการสินค้า</th>
-                <th width="80" style="text-align: right; font-size: 8pt; padding: 6px; color: #ffffff; white-space: nowrap;">ความยาว</th>
-                <th width="75" style="text-align: right; font-size: 8pt; padding: 6px; color: #ffffff; white-space: nowrap;">ราคา/หน่วย</th>
-                <th width="85" style="text-align: right; font-size: 8pt; padding: 6px; color: #ffffff; white-space: nowrap;">จำนวนเงินรวม</th>
+                <th width="22" style="text-align: center; font-size: 7pt; padding: 3px; color: #ffffff;">#</th>
+                <th width="40" style="text-align: right; font-size: 7pt; padding: 3px; color: #ffffff;">จำนวน</th>
+                <th width="40" style="text-align: center; font-size: 7pt; padding: 3px; color: #ffffff;">หน่วย</th>
+                <th style="text-align: left; font-size: 7pt; padding: 3px; color: #ffffff;">รายการสินค้า</th>
+                <th width="70" style="text-align: right; font-size: 7pt; padding: 3px; color: #ffffff; white-space: nowrap;">ความยาว</th>
+                <th width="70" style="text-align: right; font-size: 7pt; padding: 3px; color: #ffffff; white-space: nowrap;">ราคา/หน่วย</th>
+                <th width="80" style="text-align: right; font-size: 7pt; padding: 3px; color: #ffffff; white-space: nowrap;">จำนวนเงินรวม</th>
             </tr>
         </thead>
         <tbody>
             @foreach($quotation->items as $i => $item)
+                @php
+                    $rawUnit = trim((string)($item->unit ?? ''));
+                    $productUnit = trim((string)($item->product->unit ?? ''));
+                    $isSheet = in_array($rawUnit, ['แผ่น', 'ตรม.', 'ตรม']) || $productUnit === 'แผ่น';
+                    $displayUnit = $isSheet ? 'ตรม.' : $rawUnit;
+                    $lengthUnitRaw = $item->product?->sizes?->first()?->length_unit ?? '';
+                    $displayLengthUnit = $isSheet ? 'ตรม.' : $lengthUnitRaw;
+                @endphp
                 <tr style="{{ $i % 2 === 1 ? 'background-color: #f9fafb;' : '' }}">
-                    <td style="text-align: center; color: #555; border-bottom: 1px solid #e5e7eb; font-size: 8pt;">{{ $i + 1 }}</td>
-                    <td style="text-align: right; color: #555; border-bottom: 1px solid #e5e7eb; font-size: 8pt;">{{ number_format((float)$item->quantity) }}</td>
-                    <td style="text-align: center; color: #555; border-bottom: 1px solid #e5e7eb; font-size: 8pt;">{{ $item->unit }}</td>
-                    <td style="border-bottom: 1px solid #e5e7eb; font-size: 8pt;">
-                        @if($item->product)
-                            {{ $item->product->name }}. {{'('.$item->unit_price.'/'.$item->product?->sizes?->first()?->length_unit.')' ?? ''.')' }}
-                        @endif
-                        @if($item->description)
-                        <br>
-                            <span style="font-size: 8pt; color: #555;">({{ $item->description }})</span>
-                        @endif
+                    <td style="text-align: center; color: #555; border-bottom: 1px solid #e5e7eb; font-size: 7pt; padding: 2px 3px;">{{ $i + 1 }}</td>
+                    <td style="text-align: right; color: #555; border-bottom: 1px solid #e5e7eb; font-size: 7pt; padding: 2px 3px;">{{ number_format((float)$item->quantity) }}</td>
+                    <td style="text-align: center; color: #555; border-bottom: 1px solid #e5e7eb; font-size: 7pt; padding: 2px 3px;">{{ $displayUnit }}</td>
+                    <td style="border-bottom: 1px solid #e5e7eb; font-size: 7pt; padding: 2px 3px;">
+                        @if($item->product){{ $item->product->name }}. ({{ $item->unit_price }}/{{ $displayLengthUnit }})@endif
+                        @if($item->description) <span style="color: #555;">({{ $item->description }})</span>@endif
                     </td>
-                    <td style="text-align: right; color: #555; border-bottom: 1px solid #e5e7eb; font-size: 8pt; white-space: nowrap;">{{ $item->length ? number_format((float)$item->length, 2) . ' ' . ($item->product?->sizes?->first()?->length_unit ?? '') : '-' }}</td>
-                    <td style="text-align: right; color: #555; border-bottom: 1px solid #e5e7eb; font-size: 8pt; white-space: nowrap;">{{ number_format((float)$item->length * (float)$item->unit_price, 2).'/'. $item->unit }}</td>
-                    <td style="text-align: right; font-weight: bold; border-bottom: 1px solid #e5e7eb; font-size: 8pt; white-space: nowrap;">{{ number_format((float)$item->amount, 2) }}</td>
+                    <td style="text-align: right; color: #555; border-bottom: 1px solid #e5e7eb; font-size: 7pt; padding: 2px 3px; white-space: nowrap;">{{ $item->length ? number_format((float)$item->length, 2) . ' ' . $displayLengthUnit : '-' }}</td>
+                    <td style="text-align: right; color: #555; border-bottom: 1px solid #e5e7eb; font-size: 7pt; padding: 2px 3px; white-space: nowrap;">{{ number_format((float)$item->length * (float)$item->unit_price, 2).'/'. $displayUnit }}</td>
+                    <td style="text-align: right; font-weight: bold; border-bottom: 1px solid #e5e7eb; font-size: 7pt; padding: 2px 3px; white-space: nowrap;">{{ number_format((float)$item->amount, 2) }}</td>
                 </tr>
             @endforeach
         </tbody>
     </table>
 
     {{-- ===== Totals ===== --}}
-    <table width="280" cellpadding="4" cellspacing="0" style="margin-left: auto;">
+    <table width="280" cellpadding="2" cellspacing="0" style="margin-left: auto; margin-bottom: 0;">
         <tr>
             <td style="color: #555; font-size: 10pt;">ราคารวม</td>
             <td style="text-align: right; font-size: 10pt;">{{ number_format((float)$quotation->subtotal, 2) }}</td>
@@ -169,19 +168,19 @@
             </tr>
         @endif
         <tr>
-            <td style="border-top: 2px solid #1a1a1a; font-weight: bold; font-size: 12pt; padding-top: 6px;">ยอดรวมสุทธิ</td>
-            <td style="border-top: 2px solid #1a1a1a; font-weight: bold; font-size: 12pt; padding-top: 6px; text-align: right;">{{ number_format((float)$quotation->total, 2) }}</td>
+            <td style="border-top: 2px solid #1a1a1a; font-weight: bold; font-size: 12pt; padding-top: 0;">ยอดรวมสุทธิ</td>
+            <td style="border-top: 2px solid #1a1a1a; font-weight: bold; font-size: 12pt; padding-top: 0; text-align: right;">{{ number_format((float)$quotation->total, 2) }}</td>
         </tr>
     </table>
-    <div style="font-size: 8pt; color: #888; text-align: right;">({{ $bahtText }})</div>
+    <div style="font-size: 8pt; color: #888; text-align: right; margin-top: 0; margin-bottom: 0; padding: 0;">({{ $bahtText }})</div>
 
     {{-- ===== Notes ===== --}}
     @if($quotation->notes)
-        <table width="100%" cellpadding="10" cellspacing="0" style="background-color: #fefce8; border: 1px solid #fde68a; margin-top: 12px; margin-bottom: 12px;">
+        <table width="100%" cellpadding="2" cellspacing="0" style="background-color: #fefce8; border: 1px solid #fde68a; margin-top: 0; margin-bottom: 0;">
             <tr>
                 <td>
-                    <span style="font-size: 8pt; font-weight: bold; color: #888;">หมายเหตุ</span><br>
-                    <span style="font-size: 10pt; color: #374151;">{{ $quotation->notes }}</span>
+                    <span style="font-size: 7.5pt; font-weight: bold; color: #888;">หมายเหตุ</span><br>
+                    <span style="font-size: 9pt; color: #374151;">{{ $quotation->notes }}</span>
                 </td>
             </tr>
         </table>
@@ -212,12 +211,14 @@
     @endif
 
     {{-- ===== Payment Terms ===== --}}
-    <table width="100%" cellpadding="10" cellspacing="0" style="background-color: #f9fafb; border: 1px solid #d1d5db; margin-bottom: 15px;">
+    <table width="100%" cellpadding="2" cellspacing="0" style="background-color: #f9fafb; border: 1px solid #d1d5db; margin-bottom: 0; margin-top: 0;">
         <tr>
             <td>
-                <span style="font-size: 9pt; font-weight: bold; color: #555;">หมายเหตุ: เงื่อนไขการชำระเงิน</span><br>
-                <span style="font-size: 9pt; color: #374151;">1. โอนก่อนจัดส่งสินค้า</span><br>
-                <span style="font-size: 9pt; color: #374151;">2. ชำระเป็นเงินสด เมื่อตรวจรับสินค้าเรียบร้อย</span>
+                <span style="font-size: 7.5pt; font-weight: bold; color: #555;">หมายเหตุ: เงื่อนไขการชำระเงิน</span><br>
+                <span style="font-size: 8.5pt; color: #374151;">1. โอนก่อนจัดส่งสินค้า</span><br>
+                <span style="font-size: 8.5pt; color: #374151;">2. ชำระเป็นเงินสด เมื่อตรวจรับสินค้าเรียบร้อย</span><br>
+                <span style="font-size: 8.5pt; color: #374151;">3. รบกวนลูกค้าตรวจสอบรายการสินค้า ก่อนคอนเฟิร์มการสั่งซื้อ หากผิดพลาดทางบริษัท ขอสงวนสิทธิ์รับผิดชอบทุกกรณี</span><br>
+                <span style="font-size: 8.5pt; color: #374151;">4. หากเป็นสินค้าไซต์พิเศษ เมื่อสั่งผลิตแล้ว ไม่สามารถเปลี่ยนแปลงได้</span>
             </td>
         </tr>
     </table>

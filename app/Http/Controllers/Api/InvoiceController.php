@@ -309,7 +309,7 @@ class InvoiceController extends Controller
             'format' => 'A4',
             'default_font' => 'garuda',
             'margin_top' => 5,
-            'margin_bottom' => 55,
+            'margin_bottom' => 8,
             'margin_left' => 8,
             'margin_right' => 8,
             'autoLangToFont' => true,

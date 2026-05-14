@@ -26,6 +26,7 @@ class Quotation extends Model
         'vat_rate',
         'vat_amount',
         'total',
+        'valid_until',
         'created_by',
         'updated_by',
     ];
@@ -39,6 +40,7 @@ class Quotation extends Model
             'vat_rate' => 'decimal:2',
             'vat_amount' => 'decimal:2',
             'total' => 'decimal:2',
+            'valid_until' => 'date',
         ];
     }
 

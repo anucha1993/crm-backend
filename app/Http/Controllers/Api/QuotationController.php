@@ -51,6 +51,7 @@ class QuotationController extends Controller
             'customer_id' => 'required|exists:customers,id',
             'customer_address_id' => 'nullable|exists:customer_addresses,id',
             'notes' => 'nullable|string',
+            'valid_until' => 'nullable|date',
             'discount_type' => 'nullable|in:percent,amount',
             'discount_value' => 'nullable|numeric|min:0',
             'vat_rate' => 'nullable|numeric|min:0|max:100',
@@ -74,6 +75,7 @@ class QuotationController extends Controller
                 'customer_address_id' => $request->customer_address_id,
                 'status' => 'draft',
                 'notes' => $request->notes,
+                'valid_until' => $request->valid_until,
                 'discount_type' => $request->discount_type ?? 'amount',
                 'discount_value' => $request->discount_value ?? 0,
                 'vat_rate' => $request->vat_rate ?? 7,
@@ -175,6 +177,7 @@ class QuotationController extends Controller
             'customer_address_id' => 'nullable|exists:customer_addresses,id',
             'status' => 'sometimes|in:draft,sent,approved,rejected,cancelled',
             'notes' => 'nullable|string',
+            'valid_until' => 'nullable|date',
             'discount_type' => 'nullable|in:percent,amount',
             'discount_value' => 'nullable|numeric|min:0',
             'vat_rate' => 'nullable|numeric|min:0|max:100',
@@ -507,6 +510,9 @@ class QuotationController extends Controller
         $mpdf->SetAuthor($company['name'] ?? 'CRM');
         if ($quotation->status === 'cancelled') {
             $mpdf->SetWatermarkText('ยกเลิก', 0.12);
+            $mpdf->showWatermarkText = true;
+        } elseif ($quotation->valid_until && \Carbon\Carbon::parse($quotation->valid_until)->endOfDay()->isPast()) {
+            $mpdf->SetWatermarkText('เลยกำหนดยืนราคา', 0.12);
             $mpdf->showWatermarkText = true;
         }
         $mpdf->WriteHTML($html);
