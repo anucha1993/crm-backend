@@ -129,20 +129,42 @@
                     $rawUnit = trim((string)($item->unit ?? ''));
                     $productUnit = trim((string)($item->product->unit ?? ''));
                     $isSheet = in_array($rawUnit, ['แผ่น', 'ตรม.', 'ตรม']) || $productUnit === 'แผ่น';
-                    $displayUnit = $isSheet ? 'ตรม.' : $rawUnit;
+                    $displayUnit = $rawUnit;
                     $lengthUnitRaw = $item->product?->sizes?->first()?->length_unit ?? '';
-                    $displayLengthUnit = $isSheet ? 'ตรม.' : $lengthUnitRaw;
+                    $displayLengthUnit = $lengthUnitRaw;
+                    $thickness = (float)($item->thickness ?? 0);
+                    $totalArea = ($isSheet && $thickness > 0 && (float)$item->length > 0)
+                        ? (float)$item->quantity * $thickness * (float)$item->length
+                        : null;
+                    $pricePerPiece = ($isSheet && $thickness > 0 && (float)$item->length > 0)
+                        ? $thickness * (float)$item->unit_price * (float)$item->length
+                        : null;
                 @endphp
                 <tr style="{{ $i % 2 === 1 ? 'background-color: #f9fafb;' : '' }}">
                     <td style="text-align: center; color: #555; border-bottom: 1px solid #e5e7eb; font-size: 7pt; padding: 2px 3px;">{{ $i + 1 }}</td>
                     <td style="text-align: right; color: #555; border-bottom: 1px solid #e5e7eb; font-size: 7pt; padding: 2px 3px;">{{ number_format((float)$item->quantity) }}</td>
                     <td style="text-align: center; color: #555; border-bottom: 1px solid #e5e7eb; font-size: 7pt; padding: 2px 3px;">{{ $displayUnit }}</td>
                     <td style="border-bottom: 1px solid #e5e7eb; font-size: 7pt; padding: 2px 3px;">
-                        @if($item->product){{ $item->product->name }}. ({{ $item->unit_price }}/{{ $displayLengthUnit }})@endif
-                        @if($item->description) <span style="color: #555;">({{ $item->description }})</span>@endif
+                        @if($item->product)
+                            {{ $item->product->name }}.
+                            @if($totalArea !== null)
+                                ({{ number_format($totalArea, 2) }}/ตรม.)
+                            @else
+                                ({{ $item->unit_price }}/{{ $displayLengthUnit }})
+                            @endif
+                        @endif
+                        @if($thickness > 0)<br><span style="color: #555;">ความหนา: {{ number_format($thickness, 2) }}@if($item->product?->thickness_unit) {{ $item->product->thickness_unit }}@endif</span>@endif
+                        @if(!empty($item->product?->steel_type))<br><span style="color: #555;">ลวด: {{ $item->product->steel_type }}</span>@endif
+                        @if($item->description)<br><span style="color: #555;">({{ $item->description }})</span>@endif
                     </td>
                     <td style="text-align: right; color: #555; border-bottom: 1px solid #e5e7eb; font-size: 7pt; padding: 2px 3px; white-space: nowrap;">{{ $item->length ? number_format((float)$item->length, 2) . ' ' . $displayLengthUnit : '-' }}</td>
-                    <td style="text-align: right; color: #555; border-bottom: 1px solid #e5e7eb; font-size: 7pt; padding: 2px 3px; white-space: nowrap;">{{ number_format((float)$item->length * (float)$item->unit_price, 2).'/'. $displayUnit }}</td>
+                    <td style="text-align: right; color: #555; border-bottom: 1px solid #e5e7eb; font-size: 7pt; padding: 2px 3px; white-space: nowrap;">
+                        @if($pricePerPiece !== null)
+                            {{ number_format($pricePerPiece, 2) . '/แผ่น' }}
+                        @else
+                            {{ number_format((float)$item->unit_price, 2) . '/' . $displayUnit }}
+                        @endif
+                    </td>
                     <td style="text-align: right; font-weight: bold; border-bottom: 1px solid #e5e7eb; font-size: 7pt; padding: 2px 3px; white-space: nowrap;">{{ number_format((float)$item->amount, 2) }}</td>
                 </tr>
             @endforeach

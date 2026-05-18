@@ -168,9 +168,16 @@
                     $rawUnit = trim((string)($item->unit ?? ''));
                     $productUnit = trim((string)($item->product->unit ?? ''));
                     $isSheet = in_array($rawUnit, ['แผ่น', 'ตรม.', 'ตรม']) || $productUnit === 'แผ่น';
-                    $displayUnit = $isSheet ? 'ตรม.' : $rawUnit;
+                    $displayUnit = $rawUnit;
                     $lengthUnitRaw = $item->product?->sizes?->first()?->length_unit ?? '';
-                    $displayLengthUnit = $isSheet ? 'ตรม.' : $lengthUnitRaw;
+                    $displayLengthUnit = $lengthUnitRaw;
+                    $thickness = (float)($item->thickness ?? 0);
+                    $totalArea = ($isSheet && $thickness > 0 && (float)$item->length > 0)
+                        ? (float)$item->quantity * $thickness * (float)$item->length
+                        : null;
+                    $pricePerPiece = ($isSheet && $thickness > 0 && (float)$item->length > 0)
+                        ? $thickness * (float)$item->unit_price * (float)$item->length
+                        : null;
                 @endphp
                 <tr>
                     <td class="text-center">{{ $loopIndex++ }}</td>
@@ -178,11 +185,23 @@
                     <td class="text-center">{{ $displayUnit }}</td>
                     <td>
                         <b>{{ $item->product->name ?? $item->description }}</b>
-                        ({{ number_format((float)$item->unit_price, 2) }}/{{ $displayLengthUnit ?: $displayUnit }})
+                        @if($totalArea !== null)
+                            ({{ number_format($totalArea, 2) }}/ตรม.)
+                        @else
+                            ({{ number_format((float)$item->unit_price, 2) }}/{{ $displayLengthUnit ?: $displayUnit }})
+                        @endif
+                        @if($thickness > 0)<br><span class="fs-9">ความหนา: {{ number_format($thickness, 2) }}@if($item->product?->thickness_unit) {{ $item->product->thickness_unit }}@endif</span>@endif
+                        @if(!empty($item->product?->steel_type))<br><span class="fs-9">ลวด: {{ $item->product->steel_type }}</span>@endif
                         @if($item->description && $item->product)<br><span class="fs-9">{{ $item->description }}</span>@endif
                     </td>
                     <td class="text-center">{{ $item->length ? number_format((float)$item->length, 2) . ' ' . $displayLengthUnit : '-' }}</td>
-                    <td class="text-center">{{ number_format((float)$item->unit_price * (float)($item->length ?: 1), 2) }}/{{ $displayUnit }}</td>
+                    <td class="text-center">
+                        @if($pricePerPiece !== null)
+                            {{ number_format($pricePerPiece, 2) }}/แผ่น
+                        @else
+                            {{ number_format((float)$item->unit_price * (float)($item->length ?: 1), 2) }}/{{ $displayUnit }}
+                        @endif
+                    </td>
                     <td class="text-end">{{ number_format((float)$item->amount, 2) }}</td>
                 </tr>
             @endforeach
