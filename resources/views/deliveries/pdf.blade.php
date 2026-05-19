@@ -62,7 +62,7 @@
             </td>
             <td width="2%" style="padding: 0;"></td>
             <td width="13%" valign="top" style="text-align: center; padding: 4px 0 0 0;">
-                <barcode code="{{ $qrData }}" type="QR" size="0.75" error="L" />
+                <barcode code="{{ $qrData }}" type="QR" size="0.75" error="L" disableborder="1" />
                 <br>
                 <span style="font-size: 8pt; color: #888;">Billno : {{ $copyNumber }}</span>
             </td>

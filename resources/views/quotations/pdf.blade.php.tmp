@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<style>
+    body {
+        font-family: garuda, sans-serif;
+        font-size: 10pt;
+        color: #1a1a1a;
+        line-height: 1.5;
+    }
+    td, th { font-family: garuda, sans-serif; }
+    .muted { color: #6b7280; }
+    .dark { color: #1f2937; }
+    .bold { font-weight: bold; }
+    hr.sep { border: none; border-top: 1px solid #d1d5db; margin: 4px 0; }
+</style>
+</head>
+<body>
+
+    {{-- ===== Header: Logo + Title | QR + Meta ===== --}}
+    <table width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+            <td valign="top">
+                @if($logoPath)
+                    <img src="{{ $logoPath }}" height="50" />
+                @endif
+                <div style="font-size: 11pt; color: #6b7280; margin-top: 2px;">Quotation / ใบเสนอราคา</div>
+            </td>
+            <td valign="top" width="140" style="text-align: center;">
+                <barcode code="{{ $qrData }}" type="QR" size="0.75" error="L" disableborder="1" />
+                <div style="font-size: 7pt; color: #9ca3af; margin-top: 2px;">หน้า 1/1</div>
+            </td>
+            <td valign="top" style="text-align: right; line-height: 1.8;">
+                <div style="font-size: 9pt;"><span class="muted">วันที่เสนอราคา:</span> <b>{{ $createdDate }}</b></div>
+                <div style="font-size: 9pt;"><span class="muted">เลขที่ใบเสนอราคา:</span> <b>{{ $quotation->quotation_number }}@if($quotation->revision_number > 0)<span style="font-size: 8pt; color: #2563eb;">&nbsp;Rev.{{ str_pad($quotation->revision_number, 2, '0', STR_PAD_LEFT) }}</span>@endif</b></div>
+                @if($quotation->creator)
+                    <div style="font-size: 9pt;"><span class="muted">ชื่อผู้ขาย (Sale):</span> <b>{{ $quotation->creator->name }}</b></div>
+                @endif
+                @if($quotation->valid_until)
+                    @php $isExpired = \Carbon\Carbon::parse($quotation->valid_until)->endOfDay()->isPast(); @endphp
+                    <div style="font-size: 9pt; color: {{ $isExpired ? '#dc2626' : '#1a1a1a' }};"><span class="muted">ยืนราคาถึง:</span> <b>{{ \Carbon\Carbon::parse($quotation->valid_until)->locale('th')->translatedFormat('d M Y') }}</b>@if($isExpired) <span style="color:#dc2626; font-weight:bold;">(เลยกำหนด)</span>@endif</div>
+                @endif
+            </td>
+        </tr>
+    </table>
+
+    {{-- ===== Company Info ===== --}}
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-top: 6px;">
+        <tr>
+            <td style="line-height: 1.7;">
+                <div style="font-size: 10pt; font-weight: bold; color: #1a1a1a;">{{ $company['name'] ?? 'บริษัท' }}@if(!empty($company['branch']))({{ $company['branch'] }})@endif</div>
+                <div style="font-size: 8pt; color: #6b7280;">
+                    @if(!empty($company['address']))ที่อยู่ {{ $company['address'] }}@endif
+                    @if(!empty($company['phone'])) โทร {{ $company['phone'] }}@endif
+                </div>
+                @if(!empty($company['tax_id']))
+                    <div style="font-size: 8pt; color: #6b7280;">เลขประจำตัวผู้เสียภาษี {{ $company['tax_id'] }}</div>
+                @endif
+            </td>
+        </tr>
+    </table>
+
+    <hr class="sep">
+
+    {{-- ===== Customer + Shipping ===== --}}
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 6px;">
+        <tr>
+            <td width="50%" valign="top" style="line-height: 1.7;">
+                <div style="font-size: 9pt; font-weight: bold; color: #6b7280;">ข้อมูลลูกค้า</div>
+                <div style="font-size: 10pt; font-weight: bold;">{{ $quotation->customer->name ?? '-' }}</div>
+                @if($quotation->customer?->address)
+                    <div style="font-size: 8.5pt; color: #6b7280;">{{ $quotation->customer->address }}</div>
+                @endif
+                @if($quotation->customer?->phone)
+                    <div style="font-size: 8.5pt; color: #6b7280;">โทร: {{ $quotation->customer->phone }}</div>
+                @endif
+                @if($quotation->customer?->tax_id)
+                    <div style="font-size: 8.5pt; color: #6b7280;">เลขประจำตัวผู้เสียภาษี {{ $quotation->customer->tax_id }}</div>
+                @endif
+            </td>
+            <td width="50%" valign="top" style="line-height: 1.7;">
+                <div style="font-size: 9pt; font-weight: bold; color: #6b7280;">ที่อยู่จัดส่ง</div>
+                @if($quotation->shippingAddress)
+                    @if($quotation->shippingAddress->contact_name || $quotation->shippingAddress->phone)
+                        <div style="font-size: 9.5pt; color: #1a1a1a;">{{ $quotation->shippingAddress->contact_name ?? '' }}@if($quotation->shippingAddress->phone) {{ $quotation->shippingAddress->phone }}@endif</div>
+                    @endif
+                    @if($quotation->shippingAddress->label)
+                        <div style="font-size: 8.5pt; color: #6b7280;">{{ $quotation->shippingAddress->label }}</div>
+                    @endif
+                    <div style="font-size: 8.5pt; color: #6b7280;">{{ $quotation->shippingAddress->address }}</div>
+                @else
+                    <div style="font-size: 8.5pt; color: #6b7280;">{{ $quotation->customer->address ?? '-' }}</div>
+                @endif
+            </td>
+        </tr>
+    </table>
+
+    {{-- ===== Items Table ===== --}}
+    <table width="100%" cellpadding="3" cellspacing="0" style="border-collapse: collapse; margin-bottom: 0;">
+        <thead>
+            <tr style="background-color: #1f2937; color: #ffffff;">
+                <th width="30" style="text-align: center; font-size: 8pt; color: #ffffff;">ลำดับ</th>
+                <th width="45" style="text-align: right; font-size: 8pt; color: #ffffff;">จำนวน</th>
+                <th width="55" style="text-align: center; font-size: 8pt; color: #ffffff;">หน่วยนับ</th>
+                <th style="text-align: left; font-size: 8pt; color: #ffffff;">รายการสินค้า</th>
+                <th width="70" style="text-align: right; font-size: 8pt; color: #ffffff; white-space: nowrap;">ความยาว</th>
+                <th width="80" style="text-align: right; font-size: 8pt; color: #ffffff; white-space: nowrap;">ราคาต่อหน่วย</th>
+                <th width="85" style="text-align: right; font-size: 8pt; color: #ffffff; white-space: nowrap;">จำนวนเงินรวม</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach($quotation->items as $i => $item)
+                @php
+                    $rawUnit = trim((string)($item->unit ?? ''));
+                    $productUnit = trim((string)($item->product->unit ?? ''));
+                    $isSheet = $rawUnit === 'แผ่น' || $productUnit === 'แผ่น';
+                    $displayUnit = $rawUnit;
+                    $lengthUnitRaw = $item->product?->sizes?->first()?->length_unit ?? '';
+                    $displayLengthUnit = $lengthUnitRaw;
+                    $thickness = (float)($item->thickness ?? 0);
+                    $totalArea = ($isSheet && $thickness > 0 && (float)$item->length > 0)
+                        ? (float)$item->quantity * $thickness * (float)$item->length
+                        : null;
+                    $pricePerPiece = ($isSheet && $thickness > 0 && (float)$item->length > 0)
+                        ? $thickness * (float)$item->unit_price * (float)$item->length
+                        : null;
+                @endphp
+                <tr>
+                    <td style="text-align: center; color: #555; border-bottom: 1px solid #e5e7eb; font-size: 8pt;">{{ $i + 1 }}</td>
+                    <td style="text-align: right; color: #555; border-bottom: 1px solid #e5e7eb; font-size: 8pt;">{{ number_format((float)$item->quantity) }}</td>
+                    <td style="text-align: center; color: #555; border-bottom: 1px solid #e5e7eb; font-size: 8pt;">{{ $displayUnit }}</td>
+                    <td style="border-bottom: 1px solid #e5e7eb; font-size: 8pt;">
+                        @if($item->product)
+                            {{ $item->product->name }}
+                            @if($totalArea !== null)
+                                ({{ number_format($totalArea, 2) }}/ตรม.)
+                            @else
+                                ({{ $item->unit_price }}/{{ $displayLengthUnit }})
+                            @endif
+                        @endif
+                        @if($thickness > 0)<br><span style="color: #6b7280;">ความหนา: {{ number_format($thickness, 2) }}@if($item->product?->thickness_unit) {{ $item->product->thickness_unit }}@endif</span>@endif
+                        @if(!empty($item->product?->steel_type))<br><span style="color: #6b7280;">ลวด: {{ $item->product->steel_type }}</span>@endif
+                        @if($item->description)<br><span style="color: #6b7280;">({{ $item->description }})</span>@endif
+                    </td>
+                    <td style="text-align: right; color: #555; border-bottom: 1px solid #e5e7eb; font-size: 8pt; white-space: nowrap;">{{ $item->length ? number_format((float)$item->length, 2) . ' ' . $displayLengthUnit : '-' }}</td>
+                    <td style="text-align: right; color: #555; border-bottom: 1px solid #e5e7eb; font-size: 8pt; white-space: nowrap;">
+                        @if($pricePerPiece !== null)
+                            {{ number_format($pricePerPiece, 2) . '/แผ่น' }}
+                        @else
+                            {{ number_format((float)$item->unit_price, 2) . '/' . $displayUnit }}
+                        @endif
+                    </td>
+                    <td style="text-align: right; font-weight: bold; border-bottom: 1px solid #e5e7eb; font-size: 8pt; white-space: nowrap;">{{ number_format((float)$item->amount, 2) }}</td>
+                </tr>
+            @endforeach
+        </tbody>
+    </table>
+
+    {{-- ===== Notes + Totals ===== --}}
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-top: 6px;">
+        <tr>
+            <td valign="top" width="55%" style="font-size: 9pt;">
+                @if($quotation->notes)
+                    <div><b>หมายเหตุ:</b></div>
+                    <div style="font-size: 8.5pt; color: #374151;">{{ $quotation->notes }}</div>
+                @else
+                    <div><b>หมายเหตุ:</b></div>
+                @endif
+            </td>
+            <td valign="top" width="45%">
+                <table width="100%" cellpadding="2" cellspacing="0">
+                    <tr>
+                        <td style="font-size: 9pt; color: #374151;">จำนวนเงินรวม</td>
+                        <td style="text-align: right; font-size: 9pt;">{{ number_format((float)$quotation->subtotal, 2) }}</td>
+                    </tr>
+                    <tr>
+                        <td style="font-size: 9pt; color: #374151;">ส่วนลด{{ $quotation->discount_type === 'percent' && (float)$quotation->discount_value > 0 ? ' (' . (float)$quotation->discount_value . '%)' : '' }}</td>
+                        <td style="text-align: right; font-size: 9pt;">{{ number_format((float)$quotation->discount_amount, 2) }}</td>
+                    </tr>
+                    @if($isVat)
+                        <tr>
+                            <td style="font-size: 9pt; color: #374151;">ภาษีมูลค่าเพิ่ม{{ (float)$quotation->vat_rate > 0 ? ' (' . (float)$quotation->vat_rate . '%)' : '' }}</td>
+                            <td style="text-align: right; font-size: 9pt;">{{ number_format((float)$quotation->vat_amount, 2) }}</td>
+                        </tr>
+                    @endif
+                    <tr>
+                        <td style="border-top: 1.5px solid #1a1a1a; font-weight: bold; font-size: 11pt; padding-top: 3px;">จำนวนเงินทั้งสิ้น</td>
+                        <td style="border-top: 1.5px solid #1a1a1a; font-weight: bold; font-size: 11pt; padding-top: 3px; text-align: right;">{{ number_format((float)$quotation->total, 2) }}</td>
+                    </tr>
+                </table>
+                <div style="font-size: 8pt; color: #888; text-align: right;">({{ $bahtText }})</div>
+            </td>
+        </tr>
+    </table>
+
+    {{-- ===== Payment Terms + Signature ===== --}}
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-top: 10px;">
+        <tr>
+            <td valign="top" width="60%" style="font-size: 8.5pt; line-height: 1.6;">
+                <div style="font-weight: bold; color: #374151;">หมายเหตุ:เงื่อนไขการชำระเงิน</div>
+                <div style="color: #374151;">1. โอนก่อนจัดส่งสินค้า</div>
+                <div style="color: #374151;">2. ชำระเป็นเงินสด เมื่อตรวจรับสินค้าเรียบร้อย</div>
+            </td>
+            <td valign="top" width="40%" style="text-align: center; font-size: 9pt;">
+                <div style="color: #374151;">ผู้เสนอราคา</div>
+                <br><br>
+                <div style="border-top: 1px solid #9ca3af; width: 70%; margin: 0 auto;">&nbsp;</div>
+                @if($quotation->creator)
+                    <div style="font-size: 9pt; color: #1a1a1a;">{{ $quotation->creator->name }}</div>
+                @endif
+                <div style="font-size: 8pt; color: #9ca3af;">วันที่ {{ $createdDate }}</div>
+            </td>
+        </tr>
+    </table>
+
+</body>
+</html>

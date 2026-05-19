@@ -86,7 +86,7 @@
             </td>
             <td valign="top" width="40%" style="text-align: right;">
              
-                <barcode code="{{ $qrData }}" type="QR" size="0.9" error="L" />
+                <barcode code="{{ $qrData }}" type="QR" size="0.9" error="L" disableborder="1" />
                 <table width="100%" cellpadding="0" cellspacing="0"><tr><td >&nbsp;</td>
                 </tr><tr><td class="fs-9" style="text-align:right;">หน้า {{ $chunkIndex + 1 }}/{{ $totalPages }}</td></tr></table>
             </td>
@@ -96,7 +96,7 @@
     {{-- ===== Company + Document Meta ===== --}}
     <table width="100%" cellpadding="0" cellspacing="0" style="margin-top: 10px !important;">
         <tr>
-            <td valign="top" width="60%">
+            <td valign="top" width="60%" style="line-height: 1.7;">
                 <div class="fs-11"><b>{{ $company['name'] ?? 'บริษัท' }}@if(!empty($company['branch'])) ({{ $company['branch'] }})@endif</b></div>
                 <div class="fs-10" style="margin-top: 4px !important;">
                     @if(!empty($company['address']))ที่อยู่ {{ $company['address'] }}@endif
@@ -106,7 +106,7 @@
                     <div class="fs-10">เลขประจำตัวผู้เสียภาษี {{ $company['tax_id'] }}</div>
                 @endif
             </td>
-            <td valign="top" width="40%" style="text-align: right;">
+            <td valign="top" width="40%" style="text-align: right; line-height: 1.7;">
                 <div class="fs-10"><b>วันที่: </b>{{ $issueDate }}</div>
                 <div class="fs-10"><b>เลขที่: </b>{{ $invoice->invoice_number }}</div>
                 @if($invoice->creator)
@@ -123,7 +123,7 @@
         <tr>
             <td valign="top" width="50%">
                 <h4 class="fs-12"><b>ข้อมูลลูกค้า</b></h4>
-                <address class="fs-10" style="margin-top: 4px !important;">
+                <address class="fs-10" style="margin-top: 4px !important; line-height: 1.7;">
                     {{ $invoice->customer->name ?? '-' }}<br>
                     @if($invoice->customer?->address){{ $invoice->customer->address }}@endif
                     @if($invoice->customer?->phone)<br>โทร {{ $invoice->customer->phone }}@endif
@@ -132,7 +132,7 @@
             </td>
             <td valign="top" width="50%">
                 <h4 class="fs-12"><b>ที่อยู่จัดส่ง</b></h4>
-                <address class="fs-10" style="margin-top: 4px !important;">
+                <address class="fs-10" style="margin-top: 4px !important; line-height: 1.7;">
                     @if($invoice->shippingAddress)
                         @if($invoice->shippingAddress->contact_name || $invoice->shippingAddress->phone)
                             {{ $invoice->shippingAddress->contact_name ?? '' }}@if($invoice->shippingAddress->phone) ({{ $invoice->shippingAddress->phone }})@endif<br>
@@ -167,7 +167,7 @@
                 @php
                     $rawUnit = trim((string)($item->unit ?? ''));
                     $productUnit = trim((string)($item->product->unit ?? ''));
-                    $isSheet = in_array($rawUnit, ['แผ่น', 'ตรม.', 'ตรม']) || $productUnit === 'แผ่น';
+                    $isSheet = $rawUnit === 'แผ่น' || $productUnit === 'แผ่น';
                     $displayUnit = $rawUnit;
                     $lengthUnitRaw = $item->product?->sizes?->first()?->length_unit ?? '';
                     $displayLengthUnit = $lengthUnitRaw;

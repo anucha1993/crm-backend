@@ -14,7 +14,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\PersonalAccessToken;
-use Mpdf\Mpdf;
+use Mpdf\QrCode\QrCode;
+use Mpdf\QrCode\Output\Svg as QrSvg;
 
 class QuotationController extends Controller
 {
@@ -478,49 +479,36 @@ class QuotationController extends Controller
         $company = CompanySetting::getAll();
         $isVat = $quotation->account_type === 'tax';
 
-        $logoPath = null;
+        // Logo as data URI
+        $logoDataUri = null;
         if (!empty($company['logo']) && Storage::disk('public')->exists($company['logo'])) {
-            $logoPath = Storage::disk('public')->path($company['logo']);
+            $logoFile = Storage::disk('public')->path($company['logo']);
+            $logoMime = mime_content_type($logoFile) ?: 'image/png';
+            $logoDataUri = 'data:' . $logoMime . ';base64,' . base64_encode(file_get_contents($logoFile));
         }
 
         $createdDate = $quotation->created_at->format('d/m/Y');
         $bahtText = $this->numberToThaiText((float) $quotation->total);
 
-        // QR code data: quotation number only
-        $qrData = $quotation->quotation_number;
+        // QR code as inline SVG data URI
+        $qrCode = new QrCode($quotation->quotation_number, 'L');
+        $qrCode->disableBorder();
+        $qrSvg = (new QrSvg())->output($qrCode, 100);
+        $qrDataUri = 'data:image/svg+xml;base64,' . base64_encode($qrSvg);
 
-        $html = view('quotations.pdf', compact(
-            'quotation', 'company', 'isVat', 'logoPath', 'createdDate', 'bahtText', 'qrData'
-        ))->render();
-
-        $mpdf = new Mpdf([
-            'mode' => 'utf-8',
-            'format' => 'A4',
-            'default_font' => 'garuda',
-            'margin_top' => 5,
-            'margin_bottom' => 55,
-            'margin_left' => 8,
-            'margin_right' => 8,
-            'autoLangToFont' => true,
-            'autoScriptToLang' => true,
-            'tempDir' => storage_path('app/mpdf-temp'),
-        ]);
-
-        $mpdf->SetTitle('ใบเสนอราคา ' . $quotation->quotation_number);
-        $mpdf->SetAuthor($company['name'] ?? 'CRM');
+        // Watermark
+        $watermark = null;
         if ($quotation->status === 'cancelled') {
-            $mpdf->SetWatermarkText('ยกเลิก', 0.12);
-            $mpdf->showWatermarkText = true;
+            $watermark = 'ยกเลิก';
         } elseif ($quotation->valid_until && \Carbon\Carbon::parse($quotation->valid_until)->endOfDay()->isPast()) {
-            $mpdf->SetWatermarkText('เลยกำหนดยืนราคา', 0.12);
-            $mpdf->showWatermarkText = true;
+            $watermark = 'เลยกำหนดยืนราคา';
         }
-        $mpdf->WriteHTML($html);
 
-        return response($mpdf->Output('', 'S'), 200, [
-            'Content-Type' => 'application/pdf',
-            'Content-Disposition' => 'inline; filename="' . $quotation->quotation_number . '.pdf"',
-        ]);
+        return response()
+            ->view('quotations.pdf', compact(
+                'quotation', 'company', 'isVat', 'logoDataUri', 'createdDate', 'bahtText', 'qrDataUri', 'watermark'
+            ))
+            ->header('Content-Type', 'text/html; charset=utf-8');
     }
 
     private function numberToThaiText(float $num): string
