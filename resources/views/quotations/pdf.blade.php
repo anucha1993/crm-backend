@@ -152,7 +152,7 @@
                     @if($logoDataUri)
                         <img src="{{ $logoDataUri }}" alt="logo" height="60" class="mb-1">
                     @endif
-                    <h3 class="m-0 mb-3">Quotation / ใบเสนอราคา</h3>
+                    <h3 class="m-0 mb-1"><b>Quotation / ใบเสนอราคา</b></h3>
                 </div>
                 <div class="float-end text-end">
                     <img src="{{ $qrDataUri }}" alt="QR" class="qr-img"><br>
@@ -226,7 +226,7 @@
                                 <th class="text-center" style="width: 5%; white-space: nowrap;">ลำดับ</th>
                                 <th class="text-center" style="width: 7%; white-space: nowrap;">จำนวน</th>
                                 <th class="text-center" style="width: 8%; white-space: nowrap;">หน่วยนับ</th>
-                                <th style="width: 36%;">รายการสินค้า</th>
+                                <th style="width: 36%;" class="text-center">รายการสินค้า</th>
                                 <th class="text-center" style="width: 13%; white-space: nowrap;">ความยาว</th>
                                 <th class="text-center" style="width: 14%; white-space: nowrap;">ราคาต่อหน่วย</th>
                                 <th class="text-end" style="width: 17%; white-space: nowrap;">จำนวนเงินรวม</th>
