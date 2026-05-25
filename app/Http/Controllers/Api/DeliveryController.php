@@ -14,6 +14,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Mpdf\Mpdf;
+use Mpdf\QrCode\QrCode;
+use Mpdf\QrCode\Output\Svg as QrSvg;
 
 class DeliveryController extends Controller
 {
@@ -332,7 +334,7 @@ class DeliveryController extends Controller
     }
 
     /**
-     * Export delivery PDF with 4 copies
+     * Export delivery as printable HTML (4 copies). Browser handles print → PDF.
      */
     public function exportPdf(Request $request, Delivery $delivery)
     {
@@ -354,104 +356,117 @@ class DeliveryController extends Controller
         $company = CompanySetting::getAll();
         $order = $delivery->order;
 
-        $logoPath = null;
+        // Logo as data URI
+        $logoDataUri = null;
         if (!empty($company['logo']) && Storage::disk('public')->exists($company['logo'])) {
-            $logoPath = Storage::disk('public')->path($company['logo']);
+            $logoFile = Storage::disk('public')->path($company['logo']);
+            $logoMime = mime_content_type($logoFile) ?: 'image/png';
+            $logoDataUri = 'data:' . $logoMime . ';base64,' . base64_encode(file_get_contents($logoFile));
         }
 
         $createdDate = $delivery->created_at->format('d/m/Y');
         $deliveryDate = $delivery->delivery_date->format('d/m/Y');
 
-        // Calculate totals for price copies
+        // Totals
         $subtotal = $delivery->items->sum('amount');
-        // Proportional discount & VAT
-        $orderTotal = (float) $order->total;
         $orderSubtotal = (float) $order->subtotal;
         $ratio = $orderSubtotal > 0 ? $subtotal / $orderSubtotal : 0;
         $discountAmount = round((float) $order->discount_amount * $ratio, 2);
         $vatAmount = round((float) $order->vat_amount * $ratio, 2);
         $total = round($subtotal - $discountAmount + $vatAmount, 2);
         $bahtText = $this->numberToThaiText($total);
-
         $isVat = (($delivery->account_type ?? $order->account_type) === 'tax');
-        $qrData = $delivery->delivery_number;
+        $isCompleteDelivery = ($delivery->status === 'delivered');
+
+        // QR
+        $qrCode = new QrCode($delivery->delivery_number, 'L');
+        $qrCode->disableBorder();
+        $qrSvg = (new QrSvg())->output($qrCode, 100);
+        $qrDataUri = 'data:image/svg+xml;base64,' . base64_encode($qrSvg);
+
+        $html = view('deliveries.pdf', compact(
+            'delivery', 'order', 'company', 'logoDataUri', 'createdDate', 'deliveryDate',
+            'qrDataUri', 'subtotal', 'discountAmount', 'vatAmount', 'total', 'bahtText',
+            'isVat', 'isCompleteDelivery'
+        ))->render();
+
+        $tempDir = storage_path('app/mpdf-temp');
+        if (!is_dir($tempDir)) {
+            @mkdir($tempDir, 0777, true);
+        }
 
         $mpdf = new Mpdf([
             'mode' => 'utf-8',
             'format' => 'A4',
-            'default_font' => 'garuda',
-            'margin_top' => 5,
-            'margin_bottom' => 35,
-            'margin_left' => 8,
-            'margin_right' => 8,
-            'autoLangToFont' => true,
-            'autoScriptToLang' => true,
-            'tempDir' => storage_path('app/mpdf-temp'),
+            'orientation' => 'P',
+            'margin_left' => 15,
+            'margin_right' => 15,
+            'margin_top' => 15,
+            'margin_bottom' => 40,
+            'margin_header' => 5,
+            'margin_footer' => 25,
+            'default_font' => 'thsarabunnew',
+            'fontDir' => [public_path('fonts')],
+            'fontdata' => [
+                'thsarabunnew' => [
+                    'R'  => 'THSarabunNew.ttf',
+                    'B'  => 'THSarabunNew Bold.ttf',
+                    'I'  => 'THSarabunNew Italic.ttf',
+                    'BI' => 'THSarabunNew BoldItalic.ttf',
+                ],
+            ],
+            'tempDir' => $tempDir,
         ]);
+
+        $css = '
+        <style>
+            body { font-family: "thsarabunnew", sans-serif; font-size: 14pt; line-height: 1.4; color: #000; }
+            h1 { font-size: 18pt; font-weight: bold; margin: 0; padding: 0; color: #000; }
+            table { border-collapse: collapse; width: 100%; }
+            th { padding: 8px; background-color: #f0f0f0; font-weight: bold; text-align: center; font-size: 14pt; }
+            td { padding: 6px; text-align: left; font-size: 14pt; vertical-align: top; }
+            hr { border: none; border-top: 1px solid #000; margin: 15px 0; width: 100%; }
+            strong, b { font-weight: bold; }
+            div { margin: 2px 0; line-height: 1.3; }
+            p { margin: 8px 0; line-height: 1.3; }
+        </style>';
+
+        $mpdf->WriteHTML($css, \Mpdf\HTMLParserMode::HEADER_CSS);
+
+        $footerHtml = '
+        <div style="font-size: 16pt; margin-top: 10px; padding-top: 5px;">
+            <span><b>หมายเหตุ :</b></span>
+            <span>' . e($delivery->notes ?? '') . '</span>
+        </div>
+        <hr style="margin: 10px 0;">
+        <div style="font-size: 14pt; margin-bottom: 0; padding-top: 5px;">
+            <span><b>หมายเหตุการรับสินค้า :</b></span>
+            <span>กรุณาตรวจสอบความถูกต้องของสินค้าและเซ็นรับสินค้าในวันที่ได้รับ หากไม่มีการตรวจสอบหรือเซ็นรับสินค้า ทางบริษัทขอสงวนสิทธิ์ในการรับผิดชอบต่อความผิดพลาดทุกกรณี</span>
+        </div>
+        <table style="width: 100%; font-size: 14pt; border: none; margin-top: 20px;">
+            <tr>
+                <td style="width: 50%; vertical-align: top; padding-right: 20px; border: none; padding-top: 10px;">
+                    <p><strong>ลงชื่อผู้รับสินค้า...................................................ผู้รับสินค้า</strong></p>
+                </td>
+                <td style="width: 50%; vertical-align: top; text-align: right; border: none; padding-top: 10px;">
+                    <p><strong>ลงชื่อผู้ส่งสินค้า...................................................ผู้ส่งสินค้า</strong></p>
+                </td>
+            </tr>
+        </table>';
+        $mpdf->SetHTMLFooter($footerHtml);
 
         $mpdf->SetTitle('ใบส่งสินค้า ' . $delivery->delivery_number);
         $mpdf->SetAuthor($company['name'] ?? 'CRM');
-
-        // Copy 1-2: Items only (no prices)
-        for ($copy = 1; $copy <= 2; $copy++) {
-            $html = view('deliveries.pdf', [
-                'delivery' => $delivery,
-                'order' => $order,
-                'company' => $company,
-                'logoPath' => $logoPath,
-                'createdDate' => $createdDate,
-                'deliveryDate' => $deliveryDate,
-                'qrData' => $qrData,
-                'showPrices' => false,
-                'copyNumber' => $copy,
-                'copyLabel' => $copy === 1 ? 'ต้นฉบับ' : 'สำเนา',
-            ])->render();
-
-            if ($copy > 1) {
-                $mpdf->AddPage();
-            }
-            if ($delivery->status === 'cancelled') {
-                $mpdf->SetWatermarkText('ยกเลิก', 0.12);
-                $mpdf->showWatermarkText = true;
-            }
-            $mpdf->WriteHTML($html);
+        if ($delivery->status === 'cancelled') {
+            $mpdf->SetWatermarkText('ยกเลิก', 0.12);
+            $mpdf->showWatermarkText = true;
         }
 
-        // Copy 3-4: With prices
-        for ($copy = 3; $copy <= 4; $copy++) {
-            $html = view('deliveries.pdf', [
-                'delivery' => $delivery,
-                'order' => $order,
-                'company' => $company,
-                'logoPath' => $logoPath,
-                'createdDate' => $createdDate,
-                'deliveryDate' => $deliveryDate,
-                'qrData' => $qrData,
-                'showPrices' => true,
-                'copyNumber' => $copy,
-                'copyLabel' => $copy === 3 ? 'ต้นฉบับ (ราคา)' : 'สำเนา (ราคา)',
-                'subtotal' => $subtotal,
-                'discountAmount' => $discountAmount,
-                'discountType' => $order->discount_type,
-                'discountValue' => $order->discount_value,
-                'vatRate' => $order->vat_rate,
-                'vatAmount' => $vatAmount,
-                'total' => $total,
-                'bahtText' => $bahtText,
-                'isVat' => $isVat,
-            ])->render();
-
-            $mpdf->AddPage();
-            if ($delivery->status === 'cancelled') {
-                $mpdf->SetWatermarkText('ยกเลิก', 0.12);
-                $mpdf->showWatermarkText = true;
-            }
-            $mpdf->WriteHTML($html);
-        }
+        $mpdf->WriteHTML($html, \Mpdf\HTMLParserMode::HTML_BODY);
 
         return response($mpdf->Output('', 'S'), 200, [
             'Content-Type' => 'application/pdf',
-            'Content-Disposition' => 'inline; filename="' . $delivery->delivery_number . '.pdf"',
+            'Content-Disposition' => 'inline; filename="delivery-' . $delivery->delivery_number . '.pdf"',
         ]);
     }
 

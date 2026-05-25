@@ -1,204 +1,168 @@
-<!DOCTYPE html>
-<html lang="th">
-<head>
-<meta charset="UTF-8">
-<style>
-    body {
-        font-family: garuda, sans-serif;
-        font-size: 10pt;
-        color: #000;
-        line-height: 1.5;
+@php
+    $copies = ['', '', '', ''];
+    $totalCopies = count($copies);
+    $chunks = $delivery->items->chunk(8)->values();
+    if ($chunks->isEmpty()) { $chunks = collect([collect()]); }
+    $totalPages = $chunks->count() * $totalCopies;
+
+    $cust = $delivery->customer ?? $order?->customer;
+    $shipAddr = $delivery->shippingAddress ?? $order?->shippingAddress;
+
+    $totalWeight = 0;
+    foreach ($delivery->items as $it) {
+        $w = (float) ($it->product?->weight ?? 0);
+        $totalWeight += $w * (float) $it->quantity;
     }
-    td, th {
-        font-family: garuda, sans-serif;
-    }
-</style>
-</head>
-<body>
+@endphp
 
-    {{-- ===== Title + Page Info ===== --}}
-    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 8px;">
-        <tr>
-            <td valign="bottom">
-                <span style="font-size: 16pt; font-weight: bold; color: #1e40af;">ใบส่งสินค้า/delivery</span>
-            </td>
-            <td valign="top" style="text-align: right;">
-                <span style="font-size: 9pt; color: #555;">หน้าที่: {{ $copyNumber }}/4</span><br>
-                @if($delivery->total_weight > 0)
-                    <span style="font-size: 9pt; color: #555;">น้ำหนักรวม: {{ number_format((float)$delivery->total_weight, 0) }} Kgs.</span>
-                @endif
-            </td>
-        </tr>
-    </table>
+@foreach ($copies as $copyIndex => $copyName)
+    @foreach ($chunks as $chunkIndex => $chunk)
+        @php
+            $isLastPage = ($copyIndex === $totalCopies - 1) && ($chunkIndex === $chunks->count() - 1);
+            $showPrice = ($copyIndex >= 2);
+            $pageNumber = $copyIndex * $chunks->count() + $chunkIndex + 1;
+        @endphp
 
-    <div style="border-top: 2px solid #1e40af; margin-bottom: 10px;"></div>
+        @if ($copyIndex > 0 || $chunkIndex > 0)
+            <pagebreak />
+        @endif
 
-    {{-- ===== Customer Info + QR ===== --}}
-    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse; margin-bottom: 12px;">
-        <tr>
-            <td width="50%" valign="top" style="border: 1px solid #ccc; padding: 8px 10px; background: #fafafa;">
-                @php $addr = $delivery->shippingAddress ?? $order->shippingAddress; @endphp
-                <span style="font-size: 9pt; color: #666;"><b>ชื่อลูกค้า :</b></span> <span style="font-size: 10pt; font-weight: bold;">{{ $delivery->customer->name ?? '-' }}</span><br>
-                <span style="font-size: 9pt; color: #666;"><b>ที่อยู่จัดส่ง :</b></span> <span style="font-size: 9pt;">{{ $addr->label ?? '' }} {{ $addr->address ?? '-' }}</span><br>
-                <span style="font-size: 9pt; color: #666;"><b>ชื่อผู้ติดต่อ:</b></span> <span style="font-size: 9pt;">{{ $addr->contact_name ?? ($delivery->customer->contact_name ?? '-') }}</span><br>
-                <span style="font-size: 9pt; color: #666;"><b>เบอร์ติดต่อ:</b></span> <span style="font-size: 9pt;">{{ $addr->phone ?? ($delivery->customer->phone ?? '-') }}</span>
-            </td>
-            <td width="2%" style="padding: 0;"></td>
-            <td width="33%" valign="top" style="border: 1px solid #ccc; padding: 8px 10px; background: #fafafa;">
-                @php
-                    $statusMap = ['pending' => 'รอจัดส่ง', 'shipped' => 'จัดส่งแล้ว', 'delivered' => 'ส่งครบ', 'partial' => 'ส่งบางส่วน', 'cancelled' => 'ยกเลิก'];
-                @endphp
-                <span style="font-size: 9pt; color: #666;"><b>วันที่จัดส่ง :</b></span> <span style="font-size: 9pt;">{{ $deliveryDate }}</span><br>
-                <span style="font-size: 9pt; color: #666;"><b>เลขที่บิลหลัก :</b></span> <span style="font-size: 9pt;">{{ $order->order_number }}</span><br>
-                <span style="font-size: 9pt; color: #666;"><b>เลขที่บิลย่อย :</b></span> <span style="font-size: 9pt;">{{ $delivery->delivery_number }}</span><br>
-                <span style="font-size: 9pt; color: #666;"><b>สถานะ :</b></span>
-                @if($delivery->status === 'delivered')
-                    <span style="font-size: 9pt; font-weight: bold;">ส่งครบแล้ว</span>
-                @elseif($delivery->status === 'cancelled')
-                    <span style="font-size: 9pt; font-weight: bold; color: #dc2626;">ยกเลิก</span>
-                @else
-                    <span style="font-size: 9pt; font-weight: bold;">-</span>
-                @endif
-            </td>
-            <td width="2%" style="padding: 0;"></td>
-            <td width="13%" valign="top" style="text-align: center; padding: 4px 0 0 0;">
-                <barcode code="{{ $qrData }}" type="QR" size="0.75" error="L" disableborder="1" />
-                <br>
-                <span style="font-size: 8pt; color: #888;">Billno : {{ $copyNumber }}</span>
-            </td>
-        </tr>
-    </table>
-
-    {{-- ===== Items Table ===== --}}
-    <table width="100%" cellpadding="4" cellspacing="0" style="border-collapse: collapse; margin-bottom: 0;">
-        <thead>
-            <tr style="background: #1e3a5f;">
-                <th width="35" style="text-align: center; font-size: 9pt; padding: 6px; border: 1px solid #1e3a5f; color: #fff;">ลำดับ</th>
-                <th width="50" style="text-align: center; font-size: 9pt; padding: 6px; border: 1px solid #1e3a5f; color: #fff;">จำนวน</th>
-                <th width="55" style="text-align: center; font-size: 9pt; padding: 6px; border: 1px solid #1e3a5f; color: #fff;">หน่วยนับ</th>
-                <th style="text-align: center; font-size: 9pt; padding: 6px; border: 1px solid #1e3a5f; color: #fff;">รายการสินค้า</th>
-                @if($showPrices)
-                    <th width="85" style="text-align: center; font-size: 9pt; padding: 6px; border: 1px solid #1e3a5f; color: #fff;">ราคาต่อหน่วย</th>
-                    <th width="90" style="text-align: center; font-size: 9pt; padding: 6px; border: 1px solid #1e3a5f; color: #fff;">จำนวนเงิน</th>
-                @endif
-            </tr>
-        </thead>
-        <tbody>
-            @php $colCount = $showPrices ? 6 : 4; @endphp
-            @foreach($delivery->items as $i => $item)
-                <tr style="{{ $i % 2 === 1 ? 'background: #f7f9fc;' : '' }}">
-                    <td style="text-align: center; font-size: 9pt; border-left: 1px solid #ccc; border-right: 1px solid #ccc; border-bottom: 1px solid #eee; padding: 5px;">{{ $i + 1 }}</td>
-                    <td style="text-align: right; font-size: 9pt; border-right: 1px solid #ccc; border-bottom: 1px solid #eee; padding: 5px 6px;">{{ number_format((float)$item->quantity) }}</td>
-                    <td style="text-align: center; font-size: 9pt; border-right: 1px solid #ccc; border-bottom: 1px solid #eee; padding: 5px;">{{ $item->unit }}</td>
-                    <td style="font-size: 9pt; border-right: 1px solid #ccc; border-bottom: 1px solid #eee; padding: 5px 6px;">
-                        @if($item->product)
-                            {{ $item->product->name }}
-                        @endif
-                        @if($item->length)
-                            &nbsp;&nbsp;ยาว {{ number_format((float)$item->length, 2) }} {{ $item->product?->sizes?->first()?->length_unit ?? 'เมตร' }}
-                        @endif
-                        @if($item->description)
-                            <br><span style="font-size: 8pt; color: #888;">({{ $item->description }})</span>
-                        @endif
+        <div class="page-content">
+            <!-- Header Section -->
+            <table style="width: 100%; margin-bottom: 10px; border: none;">
+                <tr>
+                    <td style="border: none; width: 65%; vertical-align: top;">
+                        <h1 style="margin: 0; font-size: 18pt; font-weight: bold;"><b>ใบส่งสินค้า/delivery</b></h1>
+                        <p style="margin: 5px 0 0 0; font-size: 14pt; color: #000;"><strong>{{ $copyName }}</strong></p>
                     </td>
-                    @if($showPrices)
-                        <td style="text-align: right; font-size: 9pt; border-right: 1px solid #ccc; border-bottom: 1px solid #eee; padding: 5px 6px;">{{ number_format((float)$item->unit_price, 2) }}</td>
-                        <td style="text-align: right; font-size: 9pt; font-weight: bold; border-right: 1px solid #ccc; border-bottom: 1px solid #eee; padding: 5px 6px;">{{ number_format((float)$item->amount, 2) }}</td>
+                    <td style="border: none; width: 35%; vertical-align: top; text-align: right;">
+                        <p style="margin: 0; font-size: 12pt;">
+                            <strong>หน้า/ที่:</strong> {{ $pageNumber }}/{{ $totalPages }}
+                        </p>
+                        <p style="margin: 0; padding: 0; font-size: 12pt;">
+                            <strong>น้ำหนักรวม:</strong> {{ number_format($totalWeight, 2) }} Kgs.
+                        </p>
+                    </td>
+                </tr>
+            </table>
+
+            <!-- Document Info Table -->
+            <table style="width: 100%; border-collapse: collapse; font-size: 14pt; margin-bottom: 10px;">
+                <tr>
+                    <td style="border: 1px solid #000; padding: 8px; text-align: left; width: 60%; vertical-align: top;">
+                        <div><b>ชื่อลูกค้า :</b> {{ $cust?->name }}</div>
+                        <div><b>ที่อยู่จัดส่ง :</b> {{ $shipAddr?->address ?? $cust?->address }}</div>
+                        <div><b>ชื่อผู้ติดต่อ:</b> {{ $shipAddr?->contact_name ?? $cust?->contact_name ?? $cust?->name }}</div>
+                        <div><b>เบอร์ติดต่อ:</b> {{ $shipAddr?->phone ?? $cust?->phone }}</div>
+                    </td>
+                    <td style="border: 1px solid #000; padding: 8px; text-align: left; width: 30%; vertical-align: top;">
+                        <div><b>วันที่จัดส่ง :</b> {{ $deliveryDate }}</div>
+                        <div><b>เลขที่บิลหลัก :</b> {{ $order?->order_number }}</div>
+                        <div><b>เลขที่บิลย่อย :</b> {{ $delivery->delivery_number }}</div>
+                        <div><b>สถานะ :</b> {{ $isCompleteDelivery ? 'ส่งครบ' : 'ยังไม่ครบ' }}</div>
+                    </td>
+                    <td style="border: 1px solid #000; padding: 8px; text-align: center; width: 10%; vertical-align: middle;">
+                        <div style="margin-bottom: 10px;">
+                            <img src="{{ $qrDataUri }}" style="width: 70px; height: 70px;" />
+                        </div>
+                        <div style="font-size: 12pt;">
+                            <b>Billno :</b> 1
+                        </div>
+                    </td>
+                </tr>
+            </table>
+
+            <!-- Items Table -->
+            <table style="width: 100%; border: 1px solid #000; border-collapse: collapse; font-size: 14pt; margin-bottom: 20px;">
+                <thead>
+                    <tr style="background-color: #f0f0f0;">
+                        <th style="border: 1px solid #000; padding: 8px; text-align: center; width: 8%;">ลำดับ</th>
+                        <th style="border: 1px solid #000; padding: 8px; text-align: center; width: 10%;">จำนวน</th>
+                        <th style="border: 1px solid #000; padding: 8px; text-align: center; width: 12%;">หน่วยนับ</th>
+                        <th style="border: 1px solid #000; padding: 8px; text-align: center;">รายการสินค้า</th>
+                        @if ($showPrice)
+                            <th style="border: 1px solid #000; padding: 8px; text-align: center; width: 15%;">ราคาต่อหน่วย</th>
+                            <th style="border: 1px solid #000; padding: 8px; text-align: center; width: 15%;">จำนวน</th>
+                        @endif
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach ($chunk as $key => $item)
+                        @php
+                            $unit = $item->unit ?: ($item->product?->unit ?? '');
+                            $name = $item->product?->name ?? '';
+                            $lengthUnit = $item->product?->sizes?->first()?->length_unit ?? 'เมตร';
+                            $steelType = $item->product?->steel_type;
+                            $isService = $unit === 'บริการ' || str_contains(mb_strtolower($name), 'บริการ');
+                            $qtyStr = rtrim(rtrim(number_format((float) $item->quantity, 2, '.', ''), '0'), '.');
+                            $lengthStr = rtrim(rtrim(number_format((float) $item->length, 2, '.', ''), '0'), '.');
+                        @endphp
+                        <tr>
+                            <td style="border: none; padding: 6px; text-align: center;">{{ $chunkIndex * 8 + $key + 1 }}</td>
+                            <td style="border: none; padding: 6px; text-align: center;">{{ $qtyStr }}</td>
+                            <td style="border: none; padding: 6px; text-align: center;">{{ $unit }}</td>
+                            <td style="border: none; padding: 6px; text-align: left;">
+                                {{ $name }}
+                                @if($item->length && !$isService)
+                                    {{ $lengthStr }} {{ $lengthUnit }}
+                                @endif
+                                @if($steelType)
+                                    {{ $steelType }}
+                                @endif
+                                @if($item->description)
+                                    <br><span style="font-size: 12pt; color: #666;">[หมายเหตุ: {{ $item->description }}]</span>
+                                @endif
+                            </td>
+                            @if ($showPrice)
+                                <td style="border: none; padding: 6px; text-align: right;">{{ number_format((float) $item->unit_price, 2) }}</td>
+                                <td style="border: none; padding: 6px; text-align: right;">{{ number_format((float) $item->amount, 2) }}</td>
+                            @endif
+                        </tr>
+                    @endforeach
+
+                    @php $emptyRows = max(0, 7 - $chunk->count()); @endphp
+                    @for ($i = 1; $i <= $emptyRows; $i++)
+                        <tr>
+                            <td style="border: none; padding: 6px; text-align: center; color: #fff;">{{ $chunk->count() + $i }}</td>
+                            @if ($showPrice)
+                                <td style="border: none; padding: 6px;" colspan="5">&nbsp;</td>
+                            @else
+                                <td style="border: none; padding: 6px;" colspan="3">&nbsp;</td>
+                            @endif
+                        </tr>
+                    @endfor
+
+                    @if ($showPrice)
+                        <tr>
+                            <td colspan="4" style="border: none;"></td>
+                            <td style="border: 1px solid #000; padding: 6px; text-align: right; background-color: #f0f0f0; width: 20%; white-space: nowrap;"><strong>ราคาก่อนภาษี:</strong></td>
+                            <td style="border: 1px solid #000; padding: 6px; text-align: right; width: 15%;">{{ number_format($subtotal, 2) }}</td>
+                        </tr>
+                        <tr>
+                            <td colspan="4" style="border: none;"></td>
+                            <td style="border: 1px solid #000; padding: 6px; text-align: right; background-color: #f0f0f0; white-space: nowrap;"><strong>ส่วนลด:</strong></td>
+                            <td style="border: 1px solid #000; padding: 6px; text-align: right;">{{ number_format($discountAmount, 2) }}</td>
+                        </tr>
+                        <tr>
+                            <td colspan="4" style="border: none;"></td>
+                            <td style="border: 1px solid #000; padding: 6px; text-align: right; background-color: #f0f0f0; white-space: nowrap;"><strong>จำนวนหลังหักส่วนลด:</strong></td>
+                            <td style="border: 1px solid #000; padding: 6px; text-align: right;">{{ number_format($subtotal - $discountAmount, 2) }}</td>
+                        </tr>
+                        @if ($isVat)
+                        <tr>
+                            <td colspan="4" style="border: none;"></td>
+                            <td style="border: 1px solid #000; padding: 6px; text-align: right; background-color: #f0f0f0; white-space: nowrap;"><strong>ภาษีมูลค่าเพิ่ม:</strong></td>
+                            <td style="border: 1px solid #000; padding: 6px; text-align: right;">{{ number_format($vatAmount, 2) }}</td>
+                        </tr>
+                        @endif
+                        <tr>
+                            <td colspan="4" style="border: none;"></td>
+                            <td style="border: 1px solid #000; padding: 6px; text-align: right; background-color: #f0f0f0; white-space: nowrap;"><strong>จำนวนเงินทั้งสิ้น:</strong></td>
+                            <td style="border: 1px solid #000; padding: 6px; text-align: right; font-weight: bold;">{{ number_format($total, 2) }}</td>
+                        </tr>
                     @endif
-                </tr>
-            @endforeach
-            {{-- Empty rows to fill table --}}
-            @for($j = count($delivery->items); $j < 15; $j++)
-                <tr style="{{ $j % 2 === 1 ? 'background: #f7f9fc;' : '' }}">
-                    <td style="border-left: 1px solid #ccc; border-right: 1px solid #ccc; border-bottom: 1px solid #eee; height: 20px;">&nbsp;</td>
-                    <td style="border-right: 1px solid #ccc; border-bottom: 1px solid #eee;">&nbsp;</td>
-                    <td style="border-right: 1px solid #ccc; border-bottom: 1px solid #eee;">&nbsp;</td>
-                    <td style="border-right: 1px solid #ccc; border-bottom: 1px solid #eee;">&nbsp;</td>
-                    @if($showPrices)
-                        <td style="border-right: 1px solid #ccc; border-bottom: 1px solid #eee;">&nbsp;</td>
-                        <td style="border-right: 1px solid #ccc; border-bottom: 1px solid #eee;">&nbsp;</td>
-                    @endif
-                </tr>
-            @endfor
-            {{-- Bottom border --}}
-            <tr>
-                <td colspan="{{ $colCount }}" style="border-top: 2px solid #1e3a5f; height: 0; padding: 0;"></td>
-            </tr>
-            @if($showPrices)
-                <tr>
-                    <td colspan="4" style="padding: 0;"></td>
-                    <td style="border: 1px solid #ccc; font-size: 9pt; padding: 5px 8px; text-align: right; background: #f7f9fc;">{{ $isVat ? 'ราคาก่อนภาษี:' : 'รวมเงิน:' }}</td>
-                    <td style="border: 1px solid #ccc; font-size: 9pt; text-align: right; padding: 5px 8px;">{{ number_format($subtotal, 2) }}</td>
-                </tr>
-                <tr>
-                    <td colspan="4" style="padding: 0;"></td>
-                    <td style="border: 1px solid #ccc; font-size: 9pt; padding: 5px 8px; text-align: right; background: #f7f9fc;">ส่วนลด:</td>
-                    <td style="border: 1px solid #ccc; font-size: 9pt; text-align: right; padding: 5px 8px;">{{ number_format($discountAmount, 2) }}</td>
-                </tr>
-                <tr>
-                    <td colspan="4" style="padding: 0;"></td>
-                    <td style="border: 1px solid #ccc; font-size: 9pt; padding: 5px 8px; text-align: right; background: #f7f9fc;">จำนวนหลังหักส่วนลด:</td>
-                    <td style="border: 1px solid #ccc; font-size: 9pt; text-align: right; padding: 5px 8px;">{{ number_format($subtotal - $discountAmount, 2) }}</td>
-                </tr>
-                @if($isVat)
-                <tr>
-                    <td colspan="4" style="padding: 0;"></td>
-                    <td style="border: 1px solid #ccc; font-size: 9pt; padding: 5px 8px; text-align: right; background: #f7f9fc;">ภาษีมูลค่าเพิ่ม:</td>
-                    <td style="border: 1px solid #ccc; font-size: 9pt; text-align: right; padding: 5px 8px;">{{ number_format($vatAmount, 2) }}</td>
-                </tr>
-                @endif
-                <tr>
-                    <td colspan="4" style="padding: 0;"></td>
-                    <td style="border: 1px solid #1e3a5f; font-size: 10pt; font-weight: bold; padding: 6px 8px; text-align: right; background: #1e3a5f; color: #fff;">จำนวนเงินทั้งสิ้น:</td>
-                    <td style="border: 1px solid #1e3a5f; font-size: 10pt; font-weight: bold; text-align: right; padding: 6px 8px; background: #e8edf5;">{{ number_format($total, 2) }}</td>
-                </tr>
-            @endif
-        </tbody>
-    </table>
-
-    <br>
-
-    {{-- ===== หมายเหตุ ===== --}}
-    <div style="font-size: 9pt; margin-bottom: 6px;">
-        <b>หมายเหตุ :</b>
-    </div>
-    <div style="border-bottom: 1px solid #999; margin-bottom: 20px; padding-bottom: 4px; font-size: 9pt; min-height: 14px;">
-        {{ $delivery->notes ?? '' }}
-    </div>
-
-    {{-- ===== หมายเหตุการรับสินค้า (Footer - อยู่ล่างเสมอ) ===== --}}
-    <htmlpagefooter name="deliveryfooter">
-        <div style="font-size: 8pt; margin-bottom: 4px; color: #333; font-family: garuda, sans-serif;">
-            <b>หมายเหตุการรับสินค้า :</b> กรุณาตรวจสอบความถูกต้องของสินค้าและเซ็นรับสินค้าใบวันที่ได้รับ
+                </tbody>
+            </table>
         </div>
-        <div style="font-size: 8pt; margin-bottom: 12px; color: #333; font-family: garuda, sans-serif;">
-            หากไม่มีการตรวจสอบหรือเซ็นรับสินค้า ทางบริษัทขอสงวนสิทธิ์ในการรับผิดชอบต่อความผิดพลาดทุกกรณี
-        </div>
-         <br>
-        <table width="100%" cellpadding="0" cellspacing="0">
-            <tr>
-                <td width="50%" style="text-align: center; font-family: garuda, sans-serif;">
-                    <div style="font-size: 9pt;">
-                        ลงชื่อผู้รับสินค้า.......................................................ผู้รับสินค้า
-                    </div>
-                     <br>
-                    <div style="font-size: 8pt; color: #999; margin-top: 4px;">
-                        วันที่ ........./........../..........
-                    </div>
-                </td>
-                <td width="50%" style="text-align: center; font-family: garuda, sans-serif;">
-                    <div style="font-size: 9pt;">
-                        ลงชื่อผู้ส่งสินค้า.......................................................ผู้ส่งสินค้า
-                    </div>
-                    <br>
-                    <div style="font-size: 8pt; color: #999; margin-top: 4px;">
-                        วันที่ ........./........../..........
-                    </div>
-                </td>
-            </tr>
-        </table>
-    </htmlpagefooter>
-    <sethtmlpagefooter name="deliveryfooter" value="on" />
-
-</body>
-</html>
+    @endforeach
+@endforeach
