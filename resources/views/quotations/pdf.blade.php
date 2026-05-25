@@ -255,7 +255,7 @@
                                     <td>
                                         <b>{{ $item->product?->name }}</b>
                                         @if($totalArea !== null)
-                                            ({{ number_format($totalArea, 2) }}/ตรม.)
+                                            ({{ number_format((float)$item->unit_price, 2) }}/ตรม.)
                                         @else
                                             ({{ number_format((float)$item->unit_price, 2) }}/{{ $lengthUnitRaw }})
                                         @endif
