@@ -59,7 +59,7 @@
                         <div><b>วันที่จัดส่ง :</b> {{ $deliveryDate }}</div>
                         <div><b>เลขที่บิลหลัก :</b> {{ $order?->order_number }}</div>
                         <div><b>เลขที่บิลย่อย :</b> {{ $delivery->delivery_number }}</div>
-                        <div><b>สถานะ :</b> {{ $isCompleteDelivery ? 'ส่งครบ' : 'ยังไม่ครบ' }}</div>
+                        <div><b>สถานะ :</b> {{ $isCompleteDelivery ? 'ส่งครบแล้ว' : 'ยังไม่ครบ' }}</div>
                     </td>
                     <td style="border: 1px solid #000; padding: 8px; text-align: center; width: 10%; vertical-align: middle;">
                         <div style="margin-bottom: 10px;">

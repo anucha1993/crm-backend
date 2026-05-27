@@ -376,7 +376,8 @@ class DeliveryController extends Controller
         $total = round($subtotal - $discountAmount + $vatAmount, 2);
         $bahtText = $this->numberToThaiText($total);
         $isVat = (($delivery->account_type ?? $order->account_type) === 'tax');
-        $isCompleteDelivery = ($delivery->status === 'delivered');
+        // ส่งครบแล้ว เมื่อใบส่งของทั้งหมดของออเดอร์รวมกันครบจำนวนสินค้า
+        $isCompleteDelivery = ($order->delivery_status === 'fully_delivered');
 
         // QR
         $qrCode = new QrCode($delivery->delivery_number, 'L');
