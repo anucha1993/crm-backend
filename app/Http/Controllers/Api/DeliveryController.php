@@ -141,10 +141,12 @@ class DeliveryController extends Controller
                 $ratio = $qty / (float) $orderItem->quantity;
                 $itemAmount = round((float) $orderItem->amount * $ratio, 2);
 
-                // Calculate weight
+                // Calculate weight (น้ำหนัก = จำนวน × ความยาว(เมตร) × น้ำหนักต่อเมตร)
                 $itemWeight = 0;
                 if ($orderItem->product && $orderItem->product->weight) {
-                    $itemWeight = (float) $orderItem->product->weight * $qty;
+                    $weightPerMeter = (float) $orderItem->product->weight;
+                    $length = (float) ($orderItem->length ?? $orderItem->product->length ?? 0);
+                    $itemWeight = $weightPerMeter * $length * $qty;
                 }
 
                 DeliveryItem::create([
@@ -310,6 +312,10 @@ class DeliveryController extends Controller
                 : 0;
             $remaining = max(0, (float) $item->quantity - $delivered);
 
+            $weightPerMeter = (float) ($item->product?->weight ?? 0);
+            $length = (float) ($item->length ?? $item->product?->length ?? 0);
+            $weightPerUnit = $weightPerMeter * $length;
+
             return [
                 'order_item_id' => $item->id,
                 'product_id' => $item->product_id,
@@ -322,7 +328,8 @@ class DeliveryController extends Controller
                 'thickness' => $item->thickness,
                 'length' => $item->length,
                 'amount' => $item->amount,
-                'weight_per_unit' => $item->product?->weight ?? 0,
+                'weight_per_meter' => $weightPerMeter,
+                'weight_per_unit' => $weightPerUnit,
                 'product' => $item->product,
             ];
         });

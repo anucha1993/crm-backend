@@ -11,7 +11,8 @@
     $totalWeight = 0;
     foreach ($delivery->items as $it) {
         $w = (float) ($it->product?->weight ?? 0);
-        $totalWeight += $w * (float) $it->quantity;
+        $len = (float) ($it->length ?? $it->product?->length ?? 0);
+        $totalWeight += $w * $len * (float) $it->quantity;
     }
 @endphp
 
@@ -94,8 +95,9 @@
                             $lengthUnit = $item->product?->sizes?->first()?->length_unit ?? 'เมตร';
                             $steelType = $item->product?->steel_type;
                             $isService = $unit === 'บริการ' || str_contains(mb_strtolower($name), 'บริการ');
-                            $qtyStr = rtrim(rtrim(number_format((float) $item->quantity, 2, '.', ''), '0'), '.');
-                            $lengthStr = rtrim(rtrim(number_format((float) $item->length, 2, '.', ''), '0'), '.');
+                            $qtyStr = rtrim(rtrim(number_format((float) $item->quantity, 1, '.', ''), '0'), '.');
+                            $lengthStr = number_format((float) $item->length, 2);
+                            $thicknessStr = $item->thickness !== null ? number_format((float) $item->thickness, 2) : null;
                         @endphp
                         <tr>
                             <td style="border: none; padding: 6px; text-align: center;">{{ $chunkIndex * 8 + $key + 1 }}</td>
