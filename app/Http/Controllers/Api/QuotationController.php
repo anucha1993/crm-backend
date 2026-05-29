@@ -22,7 +22,7 @@ class QuotationController extends Controller
     public function index(Request $request): JsonResponse
     {
         $accountType = $request->attributes->get('account_type');
-        $query = Quotation::with(['customer', 'creator'])->where('account_type', $accountType);
+        $query = Quotation::with(['customer', 'creator', 'shippingAddress'])->where('account_type', $accountType);
 
         if ($request->filled('search')) {
             $search = $request->search;
