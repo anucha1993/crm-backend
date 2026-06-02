@@ -355,7 +355,7 @@ class DeliveryController extends Controller
         }
 
         $delivery->load([
-            'order.customer', 'order.shippingAddress',
+            'order.customer', 'order.shippingAddress', 'order.quotation',
             'customer', 'shippingAddress',
             'items.product.sizes', 'creator',
         ]);

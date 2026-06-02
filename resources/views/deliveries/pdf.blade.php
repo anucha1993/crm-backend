@@ -60,6 +60,9 @@
                         <div><b>วันที่จัดส่ง :</b> {{ $deliveryDate }}</div>
                         <div><b>เลขที่บิลหลัก :</b> {{ $order?->order_number }}</div>
                         <div><b>เลขที่บิลย่อย :</b> {{ $delivery->delivery_number }}</div>
+                        @if($order?->quotation?->quotation_number)
+                            <div><b>เลขที่ใบเสนอราคา :</b> {{ $order->quotation->quotation_number }}</div>
+                        @endif
                         <div><b>สถานะ :</b> {{ $isCompleteDelivery ? 'ส่งครบแล้ว' : 'ยังไม่ครบ' }}</div>
                     </td>
                     <td style="border: 1px solid #000; padding: 8px; text-align: center; width: 10%; vertical-align: middle;">
