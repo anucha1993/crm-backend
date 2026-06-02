@@ -50,13 +50,13 @@
             <!-- Document Info Table -->
             <table style="width: 100%; border-collapse: collapse; font-size: 14pt; margin-bottom: 10px;">
                 <tr>
-                    <td style="border: 1px solid #000; padding: 8px; text-align: left; width: 60%; vertical-align: top;">
+                    <td style="border: 1px solid #000; padding: 8px; text-align: left; width: 55%; vertical-align: top;">
                         <div><b>ชื่อลูกค้า :</b> {{ $cust?->name }}</div>
                         <div><b>ที่อยู่จัดส่ง :</b> {{ $shipAddr?->address ?? $cust?->address }}</div>
                         <div><b>ชื่อผู้ติดต่อ:</b> {{ $shipAddr?->contact_name ?? $cust?->contact_name ?? $cust?->name }}</div>
                         <div><b>เบอร์ติดต่อ:</b> {{ $shipAddr?->phone ?? $cust?->phone }}</div>
                     </td>
-                    <td style="border: 1px solid #000; padding: 8px; text-align: left; width: 30%; vertical-align: top;">
+                    <td style="border: 1px solid #000; padding: 8px; text-align: left; width: 35%; vertical-align: top;">
                         <div><b>วันที่จัดส่ง :</b> {{ $deliveryDate }}</div>
                         <div><b>เลขที่บิลหลัก :</b> {{ $order?->order_number }}</div>
                         <div><b>เลขที่บิลย่อย :</b> {{ $delivery->delivery_number }}</div>
