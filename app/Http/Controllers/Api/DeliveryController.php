@@ -35,7 +35,24 @@ class DeliveryController extends Controller
         }
 
         if ($request->filled('status')) {
-            $query->where('status', $request->status);
+            $status = $request->status;
+            // "delivering" and "pending" are computed from delivery_date for not-yet-delivered items.
+            // DB stores not-delivered deliveries as 'pending'; the UI shows them as:
+            //   - "delivering" (กำลังจัดส่ง) when delivery_date <= today
+            //   - "pending"    (รอจัดส่ง)    when delivery_date > today or has no date
+            if ($status === 'delivering') {
+                $query->whereIn('status', ['pending', 'delivering'])
+                    ->whereNotNull('delivery_date')
+                    ->whereDate('delivery_date', '<=', now());
+            } elseif ($status === 'pending') {
+                $query->whereIn('status', ['pending', 'delivering'])
+                    ->where(function ($q) {
+                        $q->whereNull('delivery_date')
+                          ->orWhereDate('delivery_date', '>', now());
+                    });
+            } else {
+                $query->where('status', $status);
+            }
         }
 
         if ($request->filled('order_id')) {
