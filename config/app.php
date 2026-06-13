@@ -56,6 +56,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Frontend URL
+    |--------------------------------------------------------------------------
+    |
+    | Base URL of the Next.js frontend. Used to build public-facing links such
+    | as the order/delivery tracking page encoded into QR codes.
+    |
+    */
+
+    'frontend_url' => env('FRONTEND_URL', 'http://localhost:2000'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
     |

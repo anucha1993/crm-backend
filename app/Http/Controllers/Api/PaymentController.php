@@ -406,6 +406,7 @@ class PaymentController extends Controller
         $request->validate([
             'slip_image' => 'required|file|mimes:jpg,jpeg,png|max:5120',
             'amount' => 'nullable|numeric|min:0',
+            'exclude_order_id' => 'nullable|integer',
         ]);
 
         $slip2go = new Slip2goService();
@@ -417,7 +418,41 @@ class PaymentController extends Controller
             'amount' => $request->amount,
         ]);
 
+        // Check whether this slip (by transRef) was already recorded on a real order
+        $transRef = $result['data']['transRef'] ?? null;
+        if ($transRef) {
+            $result['existing_usage'] = $this->findSlipUsage($transRef, $request->input('exclude_order_id'));
+        }
+
         return response()->json($result);
+    }
+
+    /**
+     * Find non-rejected payments that already used this slip reference (transRef).
+     * Returns a list of orders the slip has been recorded against.
+     */
+    private function findSlipUsage(string $slipRef, $excludeOrderId = null): array
+    {
+        $query = Payment::withoutGlobalScope('account')
+            ->where('slip_ref', $slipRef)
+            ->where('status', '!=', 'rejected')
+            ->with('order:id,order_number');
+
+        if ($excludeOrderId) {
+            $query->where('order_id', '!=', $excludeOrderId);
+        }
+
+        return $query->get()
+            ->map(fn ($p) => [
+                'payment_id' => $p->id,
+                'payment_number' => $p->payment_number,
+                'order_id' => $p->order_id,
+                'order_number' => $p->order?->order_number,
+                'status' => $p->status,
+                'created_at' => $p->created_at,
+            ])
+            ->values()
+            ->all();
     }
 
     /**

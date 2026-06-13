@@ -407,6 +407,14 @@ class ReportController extends Controller
                 DB::raw('SUM(orders.paid_amount) as total_paid'),
                 DB::raw('SUM(orders.remaining_amount) as total_remaining')
             )
+            ->selectSub(
+                Delivery::whereColumn('deliveries.customer_id', 'customers.id')
+                    ->where('status', '!=', 'cancelled')
+                    ->whereDate('created_at', '>=', $from)
+                    ->whereDate('created_at', '<=', $to)
+                    ->selectRaw('COUNT(*)'),
+                'delivery_count'
+            )
             ->groupBy('customers.id', 'customers.name', 'customers.code', 'level_name', 'level_color')
             ->orderByDesc('total_sales')
             ->get();

@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\QuotationController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\VehicleTypeController;
+use App\Http\Controllers\Api\TrackingController;
 use Illuminate\Support\Facades\Route;
 
 // Public routes
@@ -30,6 +31,9 @@ Route::get('/orders/status/{orderNumber}', [OrderController::class, 'publicStatu
 
 // Public delivery lookup (for QR code scan)
 Route::get('/deliveries/lookup/{deliveryNumber}', [DeliveryController::class, 'lookupByNumber']);
+
+// Public document tracking (scan any document number → unified timeline)
+Route::get('/tracking/{number}', [TrackingController::class, 'show']);
 
 // Delivery PDF export (auth via query token)
 Route::get('/deliveries/{delivery}/pdf', [DeliveryController::class, 'exportPdf']);
