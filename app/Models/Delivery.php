@@ -6,6 +6,7 @@ use App\Models\Concerns\BelongsToAccount;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Str;
 
 class Delivery extends Model
 {
@@ -58,14 +59,20 @@ class Delivery extends Model
         return $this->belongsTo(User::class, 'delivered_by');
     }
 
-    public static function generateNumber(): string
+    /**
+     * Generate a delivery number derived from its quotation number.
+     * Reuses the YYYYMM-NNNN part and swaps the prefix to DLV-.
+     * e.g. QT-202607-0006 -> DLV-202607-0006-001, DLV-202607-0006-002
+     * The running number restarts at 001 for each quotation.
+     */
+    public static function generateNumber(string $quotationNumber): string
     {
-        $prefix = 'DLV-' . date('Ym') . '-';
+        $prefix = 'DLV-' . Str::after($quotationNumber, '-') . '-';
         $last = static::withoutGlobalScope('account')
             ->where('delivery_number', 'like', $prefix . '%')
             ->orderBy('delivery_number', 'desc')
             ->first();
         $nextNum = $last ? ((int) substr($last->delivery_number, strlen($prefix))) + 1 : 1;
-        return $prefix . str_pad($nextNum, 4, '0', STR_PAD_LEFT);
+        return $prefix . str_pad($nextNum, 3, '0', STR_PAD_LEFT);
     }
 }

@@ -135,9 +135,10 @@ class DeliveryController extends Controller
         }
 
         $delivery = DB::transaction(function () use ($request, $order, $orderItems) {
+            $quotationNumber = $order->quotation?->quotation_number ?? $order->order_number;
             $delivery = Delivery::create([
                 'account_type' => $order->account_type,
-                'delivery_number' => Delivery::generateNumber(),
+                'delivery_number' => Delivery::generateNumber($quotationNumber),
                 'order_id' => $order->id,
                 'customer_id' => $order->customer_id,
                 'customer_address_id' => $order->customer_address_id,
