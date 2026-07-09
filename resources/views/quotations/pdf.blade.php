@@ -33,7 +33,7 @@
 
         body {
             font-family: 'THSarabunNew', 'Sarabun', sans-serif;
-            font-size: 15pt;
+            font-size: 20pt;
             color: #000;
             background: #fff;
             word-break: keep-all;
@@ -58,7 +58,7 @@
             padding-top: 2px !important;
             padding-bottom: 2px !important;
             border: 1px solid #dee2e6 !important;
-            font-size: 14pt;
+            font-size: 19pt;
         }
 
         .row, .col-6, .col-sm-6, .col-sm-4, .col-sm-12, .col-12 {
@@ -96,13 +96,13 @@
             white-space: nowrap;
         }
 
-        .fs-11 { font-size: 11pt; }
-        .fs-12 { font-size: 12pt; }
-        .fs-13 { font-size: 13pt; }
-        .fs-14 { font-size: 14pt; }
-        .fs-16 { font-size: 16pt; }
-        .fs-18 { font-size: 18pt; }
-        .fs-20 { font-size: 20pt; }
+        .fs-11 { font-size: 16pt; }
+        .fs-12 { font-size: 17pt; }
+        .fs-13 { font-size: 18pt; }
+        .fs-14 { font-size: 19pt; }
+        .fs-16 { font-size: 21pt; }
+        .fs-18 { font-size: 23pt; }
+        .fs-20 { font-size: 25pt; }
 
         .qr-img { height: 100px; width: 100px; }
 
