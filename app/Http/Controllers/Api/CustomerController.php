@@ -89,6 +89,56 @@ class CustomerController extends Controller
         return response()->json(['customer' => $customer]);
     }
 
+    /**
+     * Full document history for a customer: quotations -> orders -> deliveries
+     * -> invoices -> payments. Not account-scoped, so it spans cash + tax.
+     */
+    public function history(Customer $customer): JsonResponse
+    {
+        $customer->load(['level', 'creator']);
+
+        $quotations = $customer->quotations()
+            ->orderByDesc('created_at')
+            ->get(['id', 'account_type', 'quotation_number', 'status', 'total', 'created_at']);
+
+        $orders = $customer->orders()
+            ->orderByDesc('created_at')
+            ->get(['id', 'account_type', 'order_number', 'quotation_id', 'status', 'delivery_status', 'total', 'paid_amount', 'remaining_amount', 'created_at']);
+
+        $deliveries = $customer->deliveries()
+            ->orderByDesc('created_at')
+            ->get(['id', 'account_type', 'delivery_number', 'order_id', 'status', 'delivery_date', 'created_at']);
+
+        $invoices = $customer->invoices()
+            ->orderByDesc('created_at')
+            ->get(['id', 'account_type', 'invoice_number', 'order_id', 'status', 'total', 'issue_date', 'created_at']);
+
+        $payments = $customer->payments()
+            ->orderByDesc('created_at')
+            ->get(['id', 'account_type', 'payment_number', 'order_id', 'method', 'status', 'amount', 'created_at']);
+
+        $activeOrders = $orders->where('status', '!=', 'cancelled');
+
+        return response()->json([
+            'customer' => $customer,
+            'summary' => [
+                'quotation_count' => $quotations->count(),
+                'order_count' => $orders->count(),
+                'delivery_count' => $deliveries->count(),
+                'invoice_count' => $invoices->count(),
+                'payment_count' => $payments->count(),
+                'total_sales' => (float) $activeOrders->sum('total'),
+                'total_paid' => (float) $activeOrders->sum('paid_amount'),
+                'total_remaining' => (float) $activeOrders->sum('remaining_amount'),
+            ],
+            'quotations' => $quotations,
+            'orders' => $orders,
+            'deliveries' => $deliveries,
+            'invoices' => $invoices,
+            'payments' => $payments,
+        ]);
+    }
+
     public function update(Request $request, Customer $customer): JsonResponse
     {
         $request->validate([

@@ -123,6 +123,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/customers/next-code', [CustomerController::class, 'nextCode']);
         Route::get('/customers', [CustomerController::class, 'index']);
         Route::get('/customers/{customer}', [CustomerController::class, 'show']);
+        Route::get('/customers/{customer}/history', [CustomerController::class, 'history']);
     });
     Route::middleware('permission:customers.create')->post('/customers', [CustomerController::class, 'store']);
     Route::middleware('permission:customers.edit')->match(['put', 'patch'], '/customers/{customer}', [CustomerController::class, 'update']);
