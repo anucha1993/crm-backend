@@ -318,7 +318,7 @@ class DeliveryController extends Controller
         if ($accountType && $order->account_type !== $accountType) {
             abort(404, 'ไม่พบคำสั่งซื้อในบัญชีปัจจุบัน');
         }
-        $orderItems = $order->items()->with('product')->get();
+        $orderItems = $order->items()->with('product.sizes')->get();
 
         $existingDeliveries = DeliveryItem::whereHas('delivery', function ($q) use ($order) {
             $q->where('order_id', $order->id)->where('status', '!=', 'cancelled');
