@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>ใบเสนอราคา {{ $quotation->quotation_number }}</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="{{ asset('css/bootstrap.min.css') }}" rel="stylesheet">
     <style>
         @font-face {
             font-family: 'THSarabunNew';
@@ -33,7 +33,7 @@
 
         body {
             font-family: 'THSarabunNew', 'Sarabun', sans-serif;
-            font-size: 20pt;
+            font-size: 16pt;
             color: #000;
             background: #fff;
             word-break: keep-all;
@@ -58,7 +58,7 @@
             padding-top: 2px !important;
             padding-bottom: 2px !important;
             border: 1px solid #dee2e6 !important;
-            font-size: 19pt;
+            font-size: 15pt;
         }
 
         .row, .col-6, .col-sm-6, .col-sm-4, .col-sm-12, .col-12 {
@@ -96,13 +96,13 @@
             white-space: nowrap;
         }
 
-        .fs-11 { font-size: 16pt; }
-        .fs-12 { font-size: 17pt; }
-        .fs-13 { font-size: 18pt; }
-        .fs-14 { font-size: 19pt; }
-        .fs-16 { font-size: 21pt; }
-        .fs-18 { font-size: 23pt; }
-        .fs-20 { font-size: 25pt; }
+        .fs-11 { font-size: 13pt; }
+        .fs-12 { font-size: 14pt; }
+        .fs-13 { font-size: 14pt; }
+        .fs-14 { font-size: 15pt; }
+        .fs-16 { font-size: 17pt; }
+        .fs-18 { font-size: 19pt; }
+        .fs-20 { font-size: 21pt; }
 
         .qr-img { height: 100px; width: 100px; }
 
@@ -314,7 +314,7 @@
                 <hr>
 
                 <div class="row">
-                    <div class="col-sm-6">
+                    <div class="col-sm-9">
                         <div class="mt-sm-0 fs-14">
                             <span>หมายเหตุ: เงื่อนไขการชำระเงิน</span><br>
                             <span>1. โอนก่อนจัดส่งสินค้า ชำระเป็นเงินสด เมื่อตรวจรับสินค้าเรียบร้อย</span><br>
@@ -323,7 +323,7 @@
                         </div>
                         <div class="clearfix"></div>
                     </div>
-                    <div class="col-sm-6">
+                    <div class="col-sm-3">
                         <div class="float-end text-center clearfix pt-3 fs-14">
                             <span>ผู้เสนอราคา</span><br>
                             @if($quotation->creator)
