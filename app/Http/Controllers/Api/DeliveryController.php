@@ -299,14 +299,38 @@ class DeliveryController extends Controller
     public function lookupByNumber(string $deliveryNumber): JsonResponse
     {
         $delivery = Delivery::where('delivery_number', $deliveryNumber)
-            ->with(['order:id,order_number,status', 'customer:id,name', 'items', 'creator:id,name'])
+            ->with([
+                'order:id,order_number,status',
+                'customer:id,name',
+                'items.product:id,name,code',
+                'items.product.sizes:id,product_id,length_unit',
+                'creator:id,name',
+            ])
             ->first();
 
         if (!$delivery) {
             return response()->json(['message' => 'ไม่พบใบส่งของ'], 404);
         }
 
-        return response()->json(['delivery' => $delivery]);
+        // Pending payments (with slip attached) awaiting approval for this order
+        $pendingPayments = [];
+        if ($delivery->order_id) {
+            $pendingPayments = \App\Models\Payment::where('order_id', $delivery->order_id)
+                ->where('status', 'pending')
+                ->orderByDesc('created_at')
+                ->get([
+                    'id', 'payment_number', 'method', 'amount', 'is_deposit', 'status',
+                    'slip_image', 'slip_verified', 'slip_status_code', 'slip_ref',
+                    'sender_name', 'sender_bank', 'transfer_amount', 'transfer_date',
+                    'notes', 'created_at',
+                ])
+                ->toArray();
+        }
+
+        $data = $delivery->toArray();
+        $data['pending_payments'] = $pendingPayments;
+
+        return response()->json(['delivery' => $data]);
     }
 
     /**
