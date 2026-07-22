@@ -16,6 +16,8 @@ use Illuminate\Support\Facades\DB;
 
 class ReportController extends Controller
 {
+    use \App\Http\Controllers\Concerns\ScopesOwnedRecords;
+
     /**
      * Dashboard summary — overview stats + charts data
      */
@@ -25,23 +27,28 @@ class ReportController extends Controller
         $startOfMonth = $now->copy()->startOfMonth();
         $endOfMonth = $now->copy()->endOfMonth();
 
+        // Feature #6 — a sales user only sees their own records and no grand totals.
+        $restricted = $this->isSalesRestricted($request);
+        $ownerId = $request->user()->id;
+        $own = fn ($q) => $restricted ? $q->where('created_by', $ownerId) : $q;
+
         // Summary cards
-        $monthlyOrders = Order::whereBetween('created_at', [$startOfMonth, $endOfMonth])->count();
-        $monthlySales = Order::whereBetween('created_at', [$startOfMonth, $endOfMonth])
-            ->where('status', '!=', 'cancelled')
+        $monthlyOrders = $own(Order::whereBetween('created_at', [$startOfMonth, $endOfMonth]))->count();
+        $monthlySales = $own(Order::whereBetween('created_at', [$startOfMonth, $endOfMonth])
+            ->where('status', '!=', 'cancelled'))
             ->sum('total');
-        $monthlyPayments = Payment::where('status', 'approved')
-            ->whereBetween('approved_at', [$startOfMonth, $endOfMonth])
+        $monthlyPayments = $own(Payment::where('status', 'approved')
+            ->whereBetween('approved_at', [$startOfMonth, $endOfMonth]))
             ->sum('amount');
-        $pendingPayments = Payment::where('status', 'pending')->count();
-        $totalReceivable = Order::where('status', '!=', 'cancelled')
-            ->where('remaining_amount', '>', 0)
+        $pendingPayments = $own(Payment::where('status', 'pending'))->count();
+        $totalReceivable = $own(Order::where('status', '!=', 'cancelled')
+            ->where('remaining_amount', '>', 0))
             ->sum('remaining_amount');
-        $todayDeliveries = Delivery::whereDate('delivery_date', $now->toDateString())
-            ->where('status', '!=', 'cancelled')
+        $todayDeliveries = $own(Delivery::whereDate('delivery_date', $now->toDateString())
+            ->where('status', '!=', 'cancelled'))
             ->count();
-        $newCustomers = Customer::whereBetween('created_at', [$startOfMonth, $endOfMonth])->count();
-        $totalCustomers = Customer::count();
+        $newCustomers = $own(Customer::whereBetween('created_at', [$startOfMonth, $endOfMonth]))->count();
+        $totalCustomers = $own(Customer::query())->count();
 
         // Sales trend — last 12 months
         $salesTrend = Order::where('status', '!=', 'cancelled')
@@ -97,21 +104,23 @@ class ReportController extends Controller
             ->get();
 
         return response()->json([
+            'restricted' => $restricted,
             'summary' => [
                 'monthly_orders' => $monthlyOrders,
-                'monthly_sales' => round($monthlySales, 2),
-                'monthly_payments' => round($monthlyPayments, 2),
+                // Grand sales/payment totals are hidden for sales-restricted users.
+                'monthly_sales' => $restricted ? null : round($monthlySales, 2),
+                'monthly_payments' => $restricted ? null : round($monthlyPayments, 2),
                 'pending_payments' => $pendingPayments,
-                'total_receivable' => round($totalReceivable, 2),
+                'total_receivable' => round($totalReceivable, 2), // ยอดค้างชำระ (own)
                 'today_deliveries' => $todayDeliveries,
                 'new_customers' => $newCustomers,
                 'total_customers' => $totalCustomers,
             ],
-            'sales_trend' => $salesTrend,
+            'sales_trend' => $restricted ? [] : $salesTrend,
             'order_statuses' => $orderStatuses,
-            'payment_methods' => $paymentMethods,
-            'top_customers' => $topCustomers,
-            'top_products' => $topProducts,
+            'payment_methods' => $restricted ? [] : $paymentMethods,
+            'top_customers' => $restricted ? [] : $topCustomers,
+            'top_products' => $restricted ? [] : $topProducts,
         ]);
     }
 

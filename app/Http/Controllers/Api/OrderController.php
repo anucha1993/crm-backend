@@ -13,11 +13,15 @@ use Illuminate\Support\Facades\DB;
 
 class OrderController extends Controller
 {
+    use \App\Http\Controllers\Concerns\ScopesOwnedRecords;
+
     public function index(Request $request): JsonResponse
     {
         $accountType = $request->attributes->get('account_type');
         $query = Order::with(['customer', 'quotation:id,quotation_number', 'creator'])
             ->where('account_type', $accountType);
+
+        $this->scopeToOwner($query, $request);
 
         if ($request->filled('search')) {
             $search = $request->search;

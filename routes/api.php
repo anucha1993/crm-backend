@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\QuotationController;
 use App\Http\Controllers\Api\RoleController;
+use App\Http\Controllers\Api\SlipController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\VehicleTypeController;
 use App\Http\Controllers\Api\TrackingController;
@@ -155,14 +156,22 @@ Route::middleware('auth:sanctum')->group(function () {
         // Payments
         Route::middleware('permission:payments.view')->group(function () {
             Route::get('/payments', [PaymentController::class, 'index']);
+            Route::get('/orders/{order}/pending-payments', [PaymentController::class, 'pendingByOrder']);
             Route::get('/payments/{payment}', [PaymentController::class, 'show']);
+            // Slip gallery (shared slips)
+            Route::get('/slips', [SlipController::class, 'index']);
+            Route::get('/slips/{slip}', [SlipController::class, 'show']);
         });
         Route::middleware('permission:payments.create')->group(function () {
             Route::post('/orders/{order}/payments', [PaymentController::class, 'store']);
             Route::post('/payments/{payment}/resubmit', [PaymentController::class, 'resubmit']);
             Route::post('/payments/verify-slip', [PaymentController::class, 'verifySlip']);
+            Route::post('/slips', [SlipController::class, 'store']);
         });
-        Route::middleware('permission:payments.approve')->post('/payments/{payment}/approve', [PaymentController::class, 'approve']);
+        Route::middleware('permission:payments.approve')->group(function () {
+            Route::post('/payments/{payment}/approve', [PaymentController::class, 'approve']);
+            Route::post('/orders/{order}/approve-payments', [PaymentController::class, 'approveOrderPayments']);
+        });
         Route::middleware('permission:payments.reject')->post('/payments/{payment}/reject', [PaymentController::class, 'reject']);
 
         // Invoices
@@ -177,6 +186,8 @@ Route::middleware('auth:sanctum')->group(function () {
         // Deliveries
         Route::middleware('permission:deliveries.view')->group(function () {
             Route::get('/deliveries', [DeliveryController::class, 'index']);
+            Route::get('/deliveries/daily-summary', [DeliveryController::class, 'dailySummary']);
+            Route::get('/deliveries/calendar', [DeliveryController::class, 'calendar']);
             Route::get('/deliveries/{delivery}', [DeliveryController::class, 'show']);
             Route::get('/orders/{order}/delivery-remaining', [DeliveryController::class, 'orderRemaining']);
         });

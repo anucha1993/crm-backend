@@ -17,11 +17,15 @@ use Mpdf\Mpdf;
 
 class InvoiceController extends Controller
 {
+    use \App\Http\Controllers\Concerns\ScopesOwnedRecords;
+
     public function index(Request $request): JsonResponse
     {
         $accountType = $request->attributes->get('account_type');
         $query = Invoice::with(['order:id,order_number', 'customer:id,name,code', 'creator:id,name'])
             ->where('account_type', $accountType);
+
+        $this->scopeToOwner($query, $request);
 
         if ($request->filled('search')) {
             $search = $request->search;
@@ -170,6 +174,8 @@ class InvoiceController extends Controller
                     ->select('id', 'order_id', 'invoice_number', 'issue_date'),
             ])
             ->withMax(['payments as last_paid_at' => fn ($q) => $q->where('status', 'approved')], 'approved_at');
+
+        $this->scopeToOwner($query, $request);
 
         // Filter by month of latest approved payment (YYYY-MM)
         if ($request->filled('month')) {

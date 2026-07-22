@@ -19,11 +19,15 @@ use Mpdf\QrCode\Output\Svg as QrSvg;
 
 class DeliveryController extends Controller
 {
+    use \App\Http\Controllers\Concerns\ScopesOwnedRecords;
+
     public function index(Request $request): JsonResponse
     {
         $accountType = $request->attributes->get('account_type');
         $query = Delivery::with(['order:id,order_number', 'customer:id,name', 'creator:id,name'])
             ->where('account_type', $accountType);
+
+        $this->scopeToOwner($query, $request);
 
         if ($request->filled('search')) {
             $search = $request->search;
@@ -130,6 +134,35 @@ class DeliveryController extends Controller
             if ((float) $item['quantity'] > $remaining) {
                 return response()->json([
                     'message' => "สินค้า \"{$orderItem->description}\" จำนวนเกิน: ต้องการ {$item['quantity']} แต่เหลือ {$remaining}",
+                ], 422);
+            }
+        }
+
+        // Feature #1 — Final delivery bill: enforce complete payment slips, or a note.
+        // Determine whether this delivery completes the order (บิลส่งของสุดท้าย).
+        $requestedByItem = collect($request->items)->keyBy('order_item_id');
+        $isFinalDelivery = $orderItems->every(function ($orderItem) use ($existingDeliveries, $requestedByItem) {
+            $delivered = $existingDeliveries->has($orderItem->id)
+                ? $existingDeliveries->get($orderItem->id)->sum('quantity')
+                : 0;
+            $requestedNow = (float) ($requestedByItem->get($orderItem->id)['quantity'] ?? 0);
+            return ((float) $orderItem->quantity - $delivered - $requestedNow) <= 0.0001;
+        });
+
+        if ($isFinalDelivery) {
+            // Slips considered "attached" = approved + pending (awaiting approval) payments.
+            $coveredAmount = (float) $order->payments()
+                ->whereIn('status', ['approved', 'pending'])
+                ->sum('amount');
+            $slipsComplete = ($coveredAmount + 0.01) >= (float) $order->total;
+
+            if (!$slipsComplete && trim((string) $request->input('notes')) === '') {
+                return response()->json([
+                    'message' => 'บิลส่งสินค้าสุดท้าย: ยังแนบสลิปการชำระเงินไม่ครบ กรุณาระบุหมายเหตุก่อนดำเนินการต่อ',
+                    'code' => 'final_bill_note_required',
+                    'covered_amount' => round($coveredAmount, 2),
+                    'total_amount' => (float) $order->total,
+                    'remaining_amount' => round((float) $order->total - $coveredAmount, 2),
                 ], 422);
             }
         }
@@ -379,6 +412,133 @@ class DeliveryController extends Controller
         return response()->json([
             'items' => $items,
             'fully_delivered' => $items->every(fn ($i) => $i['remaining'] <= 0),
+        ]);
+    }
+
+    /**
+     * Compute the collectible total (ยอดที่ต้องเรียกเก็บ) of a single delivery bill,
+     * applying the order's discount/VAT proportionally to the delivered items.
+     * Requires `items` and `order` to be loaded.
+     */
+    private function computeDeliveryTotal(Delivery $delivery): float
+    {
+        $subtotal = (float) $delivery->items->sum('amount');
+        $order = $delivery->order;
+        if (!$order) {
+            return round($subtotal, 2);
+        }
+        $orderSubtotal = (float) $order->subtotal;
+        $ratio = $orderSubtotal > 0 ? $subtotal / $orderSubtotal : 0;
+        $discount = round((float) $order->discount_amount * $ratio, 2);
+        $vat = round((float) $order->vat_amount * $ratio, 2);
+        return round($subtotal - $discount + $vat, 2);
+    }
+
+    /**
+     * Feature #4 — Daily actual-payment summary (สรุปยอดชำระจริงรายวัน).
+     * Lists the delivery bills for a given delivery date, with the amount to
+     * collect vs the amount already paid on each order.
+     */
+    public function dailySummary(Request $request): JsonResponse
+    {
+        $accountType = $request->attributes->get('account_type');
+        $date = $request->input('date', now()->toDateString());
+
+        $query = Delivery::with(['items', 'order.customer:id,name,code', 'creator:id,name'])
+            ->where('account_type', $accountType)
+            ->where('status', '!=', 'cancelled')
+            ->whereDate('delivery_date', $date);
+
+        $this->scopeToOwner($query, $request);
+
+        $deliveries = $query->orderBy('delivery_number')->get();
+
+        $rows = $deliveries->map(function (Delivery $delivery) {
+            $order = $delivery->order;
+            $orderRemaining = (float) ($order->remaining_amount ?? 0);
+            $paymentStatus = $orderRemaining <= 0.01 ? 'paid' : 'unpaid';
+            $deliveryTotal = $this->computeDeliveryTotal($delivery);
+
+            return [
+                'id' => $delivery->id,
+                'delivery_number' => $delivery->delivery_number,
+                'status' => $delivery->status,
+                'delivery_date' => $delivery->delivery_date?->toDateString(),
+                'order_id' => $delivery->order_id,
+                'order_number' => $order?->order_number,
+                'customer_name' => $order?->customer?->name,
+                'delivery_total' => $deliveryTotal,
+                'order_total' => (float) ($order->total ?? 0),
+                'order_paid' => (float) ($order->paid_amount ?? 0),
+                'order_remaining' => $orderRemaining,
+                'payment_status' => $paymentStatus,
+                'creator' => $delivery->creator,
+            ];
+        });
+
+        $toCollect = $rows->sum('delivery_total');
+        $paidBills = $rows->where('payment_status', 'paid')->sum('delivery_total');
+
+        return response()->json([
+            'date' => $date,
+            'deliveries' => $rows->values(),
+            'summary' => [
+                'delivery_count' => $rows->count(),
+                'total_to_collect' => round($toCollect, 2),
+                'total_paid' => round($paidBills, 2),
+                'total_unpaid' => round($toCollect - $paidBills, 2),
+            ],
+        ]);
+    }
+
+    /**
+     * Feature #5 — Calendar of collections (ปฏิทินตามเก็บเงิน).
+     * Returns per-day aggregates for a month based on delivery date, split into
+     * paid vs unpaid amounts.
+     */
+    public function calendar(Request $request): JsonResponse
+    {
+        $accountType = $request->attributes->get('account_type');
+        $month = $request->input('month', now()->format('Y-m')); // YYYY-MM
+        try {
+            $start = \Illuminate\Support\Carbon::createFromFormat('Y-m-d', $month . '-01')->startOfMonth();
+        } catch (\Throwable $e) {
+            $start = now()->startOfMonth();
+        }
+        $end = $start->copy()->endOfMonth();
+
+        $query = Delivery::with(['items', 'order:id,order_number,subtotal,discount_amount,vat_amount,total,paid_amount,remaining_amount'])
+            ->where('account_type', $accountType)
+            ->where('status', '!=', 'cancelled')
+            ->whereBetween('delivery_date', [$start->toDateString(), $end->toDateString()]);
+
+        $this->scopeToOwner($query, $request);
+
+        $deliveries = $query->get();
+
+        $days = [];
+        foreach ($deliveries as $delivery) {
+            $key = $delivery->delivery_date?->toDateString();
+            if (!$key) {
+                continue;
+            }
+            if (!isset($days[$key])) {
+                $days[$key] = ['delivery_count' => 0, 'to_collect' => 0.0, 'paid' => 0.0, 'unpaid' => 0.0];
+            }
+            $total = $this->computeDeliveryTotal($delivery);
+            $isPaid = (float) ($delivery->order->remaining_amount ?? 0) <= 0.01;
+            $days[$key]['delivery_count']++;
+            $days[$key]['to_collect'] = round($days[$key]['to_collect'] + $total, 2);
+            if ($isPaid) {
+                $days[$key]['paid'] = round($days[$key]['paid'] + $total, 2);
+            } else {
+                $days[$key]['unpaid'] = round($days[$key]['unpaid'] + $total, 2);
+            }
+        }
+
+        return response()->json([
+            'month' => $start->format('Y-m'),
+            'days' => $days,
         ]);
     }
 

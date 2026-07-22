@@ -15,6 +15,7 @@ class Payment extends Model
         'account_type',
         'payment_number', 'order_id', 'customer_id', 'method', 'amount',
         'is_deposit', 'status', 'notes', 'reject_reason',
+        'slip_id',
         'slip_image', 'slip_verified', 'slip_ref', 'slip_data', 'slip_status_code',
         'sender_name', 'sender_bank', 'sender_account',
         'receiver_name', 'receiver_bank', 'receiver_account',
@@ -38,6 +39,11 @@ class Payment extends Model
     public function order(): BelongsTo
     {
         return $this->belongsTo(Order::class);
+    }
+
+    public function slip(): BelongsTo
+    {
+        return $this->belongsTo(Slip::class);
     }
 
     public function customer(): BelongsTo
