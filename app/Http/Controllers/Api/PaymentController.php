@@ -103,8 +103,11 @@ class PaymentController extends Controller
     }
 
     /**
-     * Approve all pending payments for an order in one action (the single
-     * "อนุมัติ" button placed below the slip list).
+     * Approve pending payments for an order.
+     *
+     * If `payment_ids[]` is provided in the body, only those pending payments
+     * are approved (partial approval). If omitted, ALL pending payments are
+     * approved in one action (the "อนุมัติทั้งหมด" button below the slip list).
      */
     public function approveOrderPayments(Order $order, Request $request): JsonResponse
     {
@@ -113,7 +116,18 @@ class PaymentController extends Controller
             abort(404, 'ไม่พบคำสั่งซื้อในบัญชีปัจจุบัน');
         }
 
-        $pending = $order->payments()->where('status', 'pending')->get();
+        $request->validate([
+            'payment_ids' => 'nullable|array',
+            'payment_ids.*' => 'integer',
+        ]);
+
+        $query = $order->payments()->where('status', 'pending');
+        $ids = $request->input('payment_ids');
+        if (is_array($ids) && count($ids) > 0) {
+            $query->whereIn('id', $ids);
+        }
+        $pending = $query->get();
+
         if ($pending->isEmpty()) {
             return response()->json(['message' => 'ไม่มีรายการที่รออนุมัติ'], 422);
         }

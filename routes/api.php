@@ -143,6 +143,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/quotations/{quotation}/duplicate', [QuotationController::class, 'duplicate']);
         });
         Route::middleware('permission:quotations.edit')->match(['put', 'patch'], '/quotations/{quotation}', [QuotationController::class, 'update']);
+        Route::middleware('permission:quotations.edit')->post('/quotations/{quotation}/convert-account', [QuotationController::class, 'convertAccount']);
         Route::middleware('permission:quotations.delete')->delete('/quotations/{quotation}', [QuotationController::class, 'destroy']);
 
         // Orders

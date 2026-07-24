@@ -5,10 +5,14 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\CompanySetting;
 use App\Models\Customer;
+use App\Models\Delivery;
+use App\Models\Invoice;
 use App\Models\Order;
+use App\Models\Payment;
 use App\Models\PaymentLog;
 use App\Models\Quotation;
 use App\Models\QuotationRevision;
+use App\Models\Slip;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -401,12 +405,14 @@ class QuotationController extends Controller
         $this->ensureAccountMatch($quotation, $request);
         $quotation->load('items');
 
-        $new = DB::transaction(function () use ($quotation) {
+        $userId = $request->user()->id;
+
+        $new = DB::transaction(function () use ($quotation, $userId) {
             $new = $quotation->replicate(['quotation_number', 'status', 'created_at', 'updated_at']);
             $new->quotation_number = Quotation::generateNumber();
             $new->status = 'draft';
-            $new->created_by = auth()->id();
-            $new->updated_by = auth()->id();
+            $new->created_by = $userId;
+            $new->updated_by = $userId;
             $new->save();
 
             foreach ($quotation->items as $item) {
@@ -424,12 +430,290 @@ class QuotationController extends Controller
             'revision_number' => 0,
             'action' => 'duplicated',
             'summary' => 'คัดลอกจากใบเสนอราคา ' . $quotation->quotation_number,
-            'user_id' => auth()->id(),
+            'user_id' => $userId,
         ]);
 
         $new->load(['customer.addresses', 'shippingAddress', 'items.product', 'creator', 'updater']);
 
         return response()->json(['quotation' => $new], 201);
+    }
+
+    /**
+     * Convert a quotation and ALL its downstream documents (order, deliveries,
+     * invoices, payments, and — when safe — the slips they reference) between
+     * account modes: cash <-> tax.
+     *
+     * The user must have permission for BOTH the current account (already
+     * enforced by AccountScope middleware) and the target account.
+     */
+    public function convertAccount(Quotation $quotation, Request $request): JsonResponse
+    {
+        $this->ensureAccountMatch($quotation, $request);
+
+        $request->validate([
+            'target_account_type' => 'required|in:cash,tax',
+        ]);
+
+        $target = $request->input('target_account_type');
+        $source = $quotation->account_type;
+
+        if ($target === $source) {
+            return response()->json([
+                'message' => 'ใบเสนอราคานี้อยู่ในโหมด "' . ($source === 'cash' ? 'บิลเงินสด' : 'ใบกำกับภาษี') . '" อยู่แล้ว',
+            ], 422);
+        }
+
+        // Verify user can access the TARGET account. Admins bypass.
+        $user = $request->user();
+        $isAdmin = $user->roles()->where('name', 'admin')->exists();
+        if (!$isAdmin) {
+            $requiredPermission = $target === 'cash' ? 'accounts.cash' : 'accounts.tax';
+            $hasPermission = $user->roles()
+                ->whereHas('permissions', fn ($q) => $q->where('name', $requiredPermission))
+                ->exists();
+            if (!$hasPermission) {
+                return response()->json([
+                    'message' => 'คุณไม่มีสิทธิ์แปลงเอกสารไปยังบัญชี "' . ($target === 'cash' ? 'บิลเงินสด' : 'ใบกำกับภาษี') . '"',
+                    'code' => 'target_account_forbidden',
+                ], 403);
+            }
+        }
+
+        // Collect the whole document chain BEFORE flipping account_type,
+        // because the global BelongsToAccount scope would hide rows after.
+        $order = Order::withoutGlobalScope('account')
+            ->where('quotation_id', $quotation->id)
+            ->first();
+
+        $deliveryIds = [];
+        $invoiceIds = [];
+        $paymentIds = [];
+        $slipIdsCandidate = collect();
+
+        if ($order) {
+            $deliveryIds = Delivery::withoutGlobalScope('account')
+                ->where('order_id', $order->id)->pluck('id')->all();
+            $invoiceIds = Invoice::withoutGlobalScope('account')
+                ->where('order_id', $order->id)->pluck('id')->all();
+            $payments = Payment::withoutGlobalScope('account')
+                ->where('order_id', $order->id)
+                ->get(['id', 'slip_id']);
+            $paymentIds = $payments->pluck('id')->all();
+            $slipIdsCandidate = $payments->pluck('slip_id')->filter()->unique();
+        }
+
+        // A slip may be shared across multiple orders (Feature #2: 1 slip -> many
+        // orders). Only convert slips that are ONLY referenced by payments of the
+        // order we are moving — otherwise flipping them would break the other side.
+        $slipIdsToConvert = [];
+        $slipIdsSkipped = [];
+        foreach ($slipIdsCandidate as $slipId) {
+            $externalUsage = Payment::withoutGlobalScope('account')
+                ->where('slip_id', $slipId)
+                ->when($order, fn ($q) => $q->where('order_id', '!=', $order->id))
+                ->exists();
+            if ($externalUsage) {
+                $slipIdsSkipped[] = $slipId;
+            } else {
+                $slipIdsToConvert[] = $slipId;
+            }
+        }
+
+        // Determine the new VAT rate for the TARGET mode:
+        //   cash -> always 0% (บิลเงินสดไม่มีภาษี)
+        //   tax  -> keep existing rate if already > 0, otherwise default 7%
+        $newVatRate = $target === 'cash'
+            ? 0.0
+            : ((float) $quotation->vat_rate > 0 ? (float) $quotation->vat_rate : 7.0);
+
+        // Snapshot old totals (for the summary/audit trail).
+        $quotationTotalBefore = (float) $quotation->total;
+        $quotationVatBefore = (float) $quotation->vat_amount;
+        $quotationVatRateBefore = (float) $quotation->vat_rate;
+        $orderTotalBefore = $order ? (float) $order->total : 0.0;
+
+        // Precompute quotation totals — subtotal + discount stay; only VAT/total change.
+        [$newQuotationVatAmount, $newQuotationTotal] = $this->recomputeVatTotals(
+            (float) $quotation->subtotal,
+            (float) $quotation->discount_amount,
+            $newVatRate
+        );
+
+        [$newOrderVatAmount, $newOrderTotal] = $order
+            ? $this->recomputeVatTotals(
+                (float) $order->subtotal,
+                (float) $order->discount_amount,
+                $newVatRate
+            )
+            : [0.0, 0.0];
+
+        // Invoices are legal documents. If any is 'issued', its amounts must NOT be
+        // silently rewritten — only account_type is flipped and a warning is surfaced.
+        $issuedInvoiceIds = [];
+        if (!empty($invoiceIds)) {
+            $issuedInvoiceIds = Invoice::withoutGlobalScope('account')
+                ->whereIn('id', $invoiceIds)
+                ->where('status', 'issued')
+                ->pluck('id')
+                ->all();
+        }
+        $recomputableInvoiceIds = array_values(array_diff($invoiceIds, $issuedInvoiceIds));
+
+        DB::transaction(function () use (
+            $quotation, $order, $target, $newVatRate,
+            $newQuotationVatAmount, $newQuotationTotal,
+            $newOrderVatAmount, $newOrderTotal,
+            $deliveryIds, $invoiceIds, $recomputableInvoiceIds,
+            $paymentIds, $slipIdsToConvert
+        ) {
+            // Quotation — flip mode + recompute VAT/total.
+            $quotation->forceFill([
+                'account_type' => $target,
+                'vat_rate' => $newVatRate,
+                'vat_amount' => $newQuotationVatAmount,
+                'total' => $newQuotationTotal,
+            ])->save();
+
+            // Order — recompute totals AND remaining_amount (paid_amount stays).
+            if ($order) {
+                $paid = (float) $order->paid_amount;
+                $order->forceFill([
+                    'account_type' => $target,
+                    'vat_rate' => $newVatRate,
+                    'vat_amount' => $newOrderVatAmount,
+                    'total' => $newOrderTotal,
+                    'remaining_amount' => max(0.0, round($newOrderTotal - $paid, 2)),
+                ])->save();
+            }
+
+            // Deliveries carry no monetary totals — just flip account_type.
+            if (!empty($deliveryIds)) {
+                Delivery::withoutGlobalScope('account')
+                    ->whereIn('id', $deliveryIds)
+                    ->update(['account_type' => $target]);
+            }
+
+            // Invoices — flip account_type on all; recompute VAT/total ONLY on
+            // non-issued ones (safe). Issued invoices keep their historic amounts.
+            if (!empty($invoiceIds)) {
+                Invoice::withoutGlobalScope('account')
+                    ->whereIn('id', $invoiceIds)
+                    ->update(['account_type' => $target]);
+            }
+            if (!empty($recomputableInvoiceIds)) {
+                $invoices = Invoice::withoutGlobalScope('account')
+                    ->whereIn('id', $recomputableInvoiceIds)
+                    ->get();
+                foreach ($invoices as $inv) {
+                    [$vat, $total] = $this->recomputeVatTotals(
+                        (float) $inv->subtotal,
+                        (float) $inv->discount_amount,
+                        $newVatRate
+                    );
+                    $inv->forceFill([
+                        'vat_rate' => $newVatRate,
+                        'vat_amount' => $vat,
+                        'total' => $total,
+                    ])->save();
+                }
+            }
+
+            // Payments & slips = real money records. Only flip account_type,
+            // never touch amounts.
+            if (!empty($paymentIds)) {
+                Payment::withoutGlobalScope('account')
+                    ->whereIn('id', $paymentIds)
+                    ->update(['account_type' => $target]);
+            }
+            if (!empty($slipIdsToConvert)) {
+                Slip::withoutGlobalScope('account')
+                    ->whereIn('id', $slipIdsToConvert)
+                    ->update(['account_type' => $target]);
+            }
+        });
+
+        $summary = 'แปลงโหมดบัญชี ' .
+            ($source === 'cash' ? 'บิลเงินสด' : 'ใบกำกับภาษี') . ' → ' .
+            ($target === 'cash' ? 'บิลเงินสด' : 'ใบกำกับภาษี');
+
+        $quotation->increment('revision_number');
+        $quotation->refresh();
+
+        QuotationRevision::create([
+            'quotation_id' => $quotation->id,
+            'revision_number' => $quotation->revision_number,
+            'action' => 'account_converted',
+            'summary' => $summary,
+            'changes' => [
+                'account_type' => ['from' => $source, 'to' => $target],
+                'vat_rate' => ['from' => $quotationVatRateBefore, 'to' => $newVatRate],
+                'total' => ['from' => $quotationTotalBefore, 'to' => $newQuotationTotal],
+                'vat_amount' => ['from' => $quotationVatBefore, 'to' => $newQuotationVatAmount],
+                'converted' => [
+                    'order' => $order?->id,
+                    'deliveries' => count($deliveryIds),
+                    'invoices' => count($invoiceIds),
+                    'invoices_recomputed' => count($recomputableInvoiceIds),
+                    'invoices_issued_kept' => count($issuedInvoiceIds),
+                    'payments' => count($paymentIds),
+                    'slips' => count($slipIdsToConvert),
+                    'slips_skipped' => count($slipIdsSkipped),
+                ],
+            ],
+            'user_id' => $request->user()->id,
+        ]);
+
+        if ($order) {
+            PaymentLog::create([
+                'order_id' => $order->id,
+                'action' => 'account_converted',
+                'summary' => $summary . ' (โดยแปลงจากใบเสนอราคา ' . $quotation->quotation_number
+                    . ' — VAT: ' . number_format($quotationVatRateBefore, 2) . '% → ' . number_format($newVatRate, 2) . '%'
+                    . ', ยอดคำสั่งซื้อ: ' . number_format($orderTotalBefore, 2) . ' → ' . number_format($newOrderTotal, 2) . ')',
+                'user_id' => $request->user()->id,
+            ]);
+        }
+
+        return response()->json([
+            'message' => 'แปลงโหมดบัญชีสำเร็จ',
+            'quotation' => [
+                'id' => $quotation->id,
+                'quotation_number' => $quotation->quotation_number,
+                'account_type' => $quotation->account_type,
+            ],
+            'summary' => [
+                'from' => $source,
+                'to' => $target,
+                'order_id' => $order?->id,
+                'order_number' => $order?->order_number,
+                'deliveries' => count($deliveryIds),
+                'invoices' => count($invoiceIds),
+                'invoices_recomputed' => count($recomputableInvoiceIds),
+                'invoices_issued_kept' => count($issuedInvoiceIds),
+                'payments' => count($paymentIds),
+                'slips_converted' => count($slipIdsToConvert),
+                'slips_skipped' => count($slipIdsSkipped),
+                'vat_rate_from' => $quotationVatRateBefore,
+                'vat_rate_to' => $newVatRate,
+                'quotation_total_from' => $quotationTotalBefore,
+                'quotation_total_to' => $newQuotationTotal,
+                'order_total_from' => $orderTotalBefore,
+                'order_total_to' => $newOrderTotal,
+            ],
+        ]);
+    }
+
+    /**
+     * Recompute vat_amount + total from a subtotal, discount amount and vat_rate (%).
+     * subtotal + discount are preserved (unit prices remain the same in BOTH modes);
+     * only the VAT layer changes.
+     */
+    private function recomputeVatTotals(float $subtotal, float $discountAmount, float $vatRate): array
+    {
+        $net = max(0.0, $subtotal - $discountAmount);
+        $vatAmount = round($net * $vatRate / 100, 2);
+        $total = round($net + $vatAmount, 2);
+        return [$vatAmount, $total];
     }
 
     private function calculateItemAmount(?float $thickness, ?float $length, float $quantity, float $unitPrice): float

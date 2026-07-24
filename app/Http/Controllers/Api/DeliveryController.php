@@ -24,7 +24,7 @@ class DeliveryController extends Controller
     public function index(Request $request): JsonResponse
     {
         $accountType = $request->attributes->get('account_type');
-        $query = Delivery::with(['order:id,order_number', 'customer:id,name', 'creator:id,name'])
+        $query = Delivery::with(['order:id,order_number,total,paid_amount,remaining_amount', 'customer:id,name', 'creator:id,name'])
             ->where('account_type', $accountType);
 
         $this->scopeToOwner($query, $request);
