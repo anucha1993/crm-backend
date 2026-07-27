@@ -85,6 +85,12 @@ class PermissionSeeder extends Seeder
                 ['name' => 'accounts.cash', 'display_name' => 'เข้าถึงบัญชีบิลเงินสด'],
                 ['name' => 'accounts.tax', 'display_name' => 'เข้าถึงบัญชีใบกำกับภาษี'],
             ],
+            'records' => [
+                ['name' => 'records.view_all', 'display_name' => 'ดูข้อมูลของผู้ใช้อื่น (ไม่จำกัดเฉพาะที่ตนสร้าง)'],
+            ],
+            'finance' => [
+                ['name' => 'finance.view_totals', 'display_name' => 'ดูยอดรวม / ยอดชำระ / ยอดคงเหลือรวม'],
+            ],
         ];
 
         $validNames = [];
@@ -103,5 +109,20 @@ class PermissionSeeder extends Seeder
 
         // Remove obsolete permissions (e.g. deals.*, tasks.*)
         Permission::whereNotIn('name', $validNames)->delete();
+
+        // Ensure the 'admin' role always has EVERY permission (including the new ones).
+        // Safe on fresh DBs (admin role may not exist yet → skipped) and on re-runs.
+        $adminRole = \App\Models\Role::where('name', 'admin')->first();
+        if ($adminRole) {
+            $allIds = Permission::pluck('id')->all();
+            $adminRole->permissions()->sync($allIds);
+        }
+
+        // Grant the two new "visibility" perms to 'manager' as sensible defaults.
+        $managerRole = \App\Models\Role::where('name', 'manager')->first();
+        if ($managerRole) {
+            $newIds = Permission::whereIn('name', ['records.view_all', 'finance.view_totals'])->pluck('id')->all();
+            $managerRole->permissions()->syncWithoutDetaching($newIds);
+        }
     }
 }
