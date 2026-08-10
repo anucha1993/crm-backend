@@ -24,7 +24,21 @@ class DeliveryController extends Controller
     public function index(Request $request): JsonResponse
     {
         $accountType = $request->attributes->get('account_type');
-        $query = Delivery::with(['order:id,order_number,total,paid_amount,remaining_amount', 'customer:id,name', 'creator:id,name'])
+        // Eager-load the order with an extra `pending_payment_amount` scalar so the
+        // frontend can distinguish 3 payment states: paid / pending-verification /
+        // unpaid. Order.paid_amount only counts approved payments, so a slip that
+        // has just been attached (still pending approval) would otherwise show as
+        // "ยังไม่ชำระ" and trigger a wrong collection follow-up.
+        $query = Delivery::with([
+                'order' => function ($q) {
+                    $q->select('id', 'order_number', 'total', 'paid_amount', 'remaining_amount')
+                      ->withSum(['payments as pending_payment_amount' => function ($qq) {
+                          $qq->where('status', 'pending');
+                      }], 'amount');
+                },
+                'customer:id,name',
+                'creator:id,name',
+            ])
             ->where('account_type', $accountType);
 
         $this->scopeToOwner($query, $request);
@@ -444,7 +458,16 @@ class DeliveryController extends Controller
         $accountType = $request->attributes->get('account_type');
         $date = $request->input('date', now()->toDateString());
 
-        $query = Delivery::with(['items', 'order.customer:id,name,code', 'creator:id,name'])
+        $query = Delivery::with([
+                'items',
+                'order.customer:id,name,code',
+                'order' => function ($q) {
+                    $q->withSum(['payments as pending_payment_amount' => function ($qq) {
+                        $qq->where('status', 'pending');
+                    }], 'amount');
+                },
+                'creator:id,name',
+            ])
             ->where('account_type', $accountType)
             ->where('status', '!=', 'cancelled')
             ->whereDate('delivery_date', $date);
@@ -456,7 +479,11 @@ class DeliveryController extends Controller
         $rows = $deliveries->map(function (Delivery $delivery) {
             $order = $delivery->order;
             $orderRemaining = (float) ($order->remaining_amount ?? 0);
-            $paymentStatus = $orderRemaining <= 0.01 ? 'paid' : 'unpaid';
+            $pendingAmount = (float) ($order->pending_payment_amount ?? 0);
+            // 3-state: paid > pending_verification (any pending slip) > unpaid
+            $paymentStatus = $orderRemaining <= 0.01
+                ? 'paid'
+                : ($pendingAmount > 0.01 ? 'pending_verification' : 'unpaid');
             $deliveryTotal = $this->computeDeliveryTotal($delivery);
 
             return [
@@ -470,6 +497,7 @@ class DeliveryController extends Controller
                 'delivery_total' => $deliveryTotal,
                 'order_total' => (float) ($order->total ?? 0),
                 'order_paid' => (float) ($order->paid_amount ?? 0),
+                'order_pending' => round($pendingAmount, 2),
                 'order_remaining' => $orderRemaining,
                 'payment_status' => $paymentStatus,
                 'creator' => $delivery->creator,
@@ -478,6 +506,7 @@ class DeliveryController extends Controller
 
         $toCollect = $rows->sum('delivery_total');
         $paidBills = $rows->where('payment_status', 'paid')->sum('delivery_total');
+        $pendingBills = $rows->where('payment_status', 'pending_verification')->sum('delivery_total');
 
         return response()->json([
             'date' => $date,
@@ -486,7 +515,8 @@ class DeliveryController extends Controller
                 'delivery_count' => $rows->count(),
                 'total_to_collect' => round($toCollect, 2),
                 'total_paid' => round($paidBills, 2),
-                'total_unpaid' => round($toCollect - $paidBills, 2),
+                'total_pending' => round($pendingBills, 2),
+                'total_unpaid' => round($toCollect - $paidBills - $pendingBills, 2),
             ],
         ]);
     }
@@ -507,7 +537,15 @@ class DeliveryController extends Controller
         }
         $end = $start->copy()->endOfMonth();
 
-        $query = Delivery::with(['items', 'order:id,order_number,subtotal,discount_amount,vat_amount,total,paid_amount,remaining_amount'])
+        $query = Delivery::with([
+                'items',
+                'order' => function ($q) {
+                    $q->select('id', 'order_number', 'subtotal', 'discount_amount', 'vat_amount', 'total', 'paid_amount', 'remaining_amount')
+                      ->withSum(['payments as pending_payment_amount' => function ($qq) {
+                          $qq->where('status', 'pending');
+                      }], 'amount');
+                },
+            ])
             ->where('account_type', $accountType)
             ->where('status', '!=', 'cancelled')
             ->whereBetween('delivery_date', [$start->toDateString(), $end->toDateString()]);
@@ -523,14 +561,21 @@ class DeliveryController extends Controller
                 continue;
             }
             if (!isset($days[$key])) {
-                $days[$key] = ['delivery_count' => 0, 'to_collect' => 0.0, 'paid' => 0.0, 'unpaid' => 0.0];
+                $days[$key] = ['delivery_count' => 0, 'to_collect' => 0.0, 'paid' => 0.0, 'pending' => 0.0, 'unpaid' => 0.0];
             }
             $total = $this->computeDeliveryTotal($delivery);
-            $isPaid = (float) ($delivery->order->remaining_amount ?? 0) <= 0.01;
+            $remaining = (float) ($delivery->order->remaining_amount ?? 0);
+            $pendingAmount = (float) ($delivery->order->pending_payment_amount ?? 0);
+            $isPaid = $remaining <= 0.01;
+            // "รอยืนยัน" = has pending slips awaiting approval (any pending payment > 0)
+            $hasPending = !$isPaid && $pendingAmount > 0.01;
+
             $days[$key]['delivery_count']++;
             $days[$key]['to_collect'] = round($days[$key]['to_collect'] + $total, 2);
             if ($isPaid) {
                 $days[$key]['paid'] = round($days[$key]['paid'] + $total, 2);
+            } elseif ($hasPending) {
+                $days[$key]['pending'] = round($days[$key]['pending'] + $total, 2);
             } else {
                 $days[$key]['unpaid'] = round($days[$key]['unpaid'] + $total, 2);
             }
