@@ -260,7 +260,7 @@
                                             ({{ number_format((float)$item->unit_price, 2) }}/{{ $lengthUnitRaw }})
                                         @endif
                                         @if($thickness > 0)
-                                            <br>ความหนา: {{ number_format($thickness, 2) }}@if($item->product?->thickness_unit) {{ $item->product->thickness_unit }}@endif
+                                            <br>ความกว้าง: {{ number_format($thickness, 2) }}@if($item->product?->thickness_unit) {{ $item->product->thickness_unit }}@endif
                                         @endif
                                         @if(!empty($item->product?->steel_type))
                                             <br>ลวด: {{ $item->product->steel_type }}
