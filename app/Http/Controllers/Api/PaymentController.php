@@ -60,7 +60,7 @@ class PaymentController extends Controller
     {
         $this->ensureAccountMatch($payment, $request);
         $payment->load([
-            'order.customer', 'order.items', 'customer',
+            'order.customer', 'order.items.product:id,name,code', 'customer',
             'creator:id,name', 'approver:id,name',
         ]);
 
