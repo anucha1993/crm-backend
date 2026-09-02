@@ -172,6 +172,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::middleware('permission:payments.approve')->group(function () {
             Route::post('/payments/{payment}/approve', [PaymentController::class, 'approve']);
             Route::post('/orders/{order}/approve-payments', [PaymentController::class, 'approveOrderPayments']);
+            Route::post('/payments/{payment}/revert', [PaymentController::class, 'revert']);
         });
         Route::middleware('permission:payments.reject')->post('/payments/{payment}/reject', [PaymentController::class, 'reject']);
 

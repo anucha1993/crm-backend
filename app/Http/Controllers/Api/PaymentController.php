@@ -38,7 +38,12 @@ class PaymentController extends Controller
         }
 
         if ($request->filled('status')) {
-            $query->where('status', $request->status);
+            $statuses = array_filter(array_map('trim', explode(',', $request->status)), fn ($v) => $v !== '');
+            if (count($statuses) > 1) {
+                $query->whereIn('status', $statuses);
+            } else {
+                $query->where('status', $request->status);
+            }
         }
 
         if ($request->filled('method')) {
@@ -471,6 +476,62 @@ class PaymentController extends Controller
             'summary' => 'ปฏิเสธการชำระเงิน ' . $payment->payment_number . ': ' . $request->reason,
             'user_id' => $request->user()->id,
         ]);
+
+        return response()->json(['payment' => $payment->fresh(['creator', 'approver'])]);
+    }
+
+    /**
+     * Revert an approved OR rejected payment back to pending.
+     * Refunds pocket money if the original approval had deducted it,
+     * and reverts order status if it was auto-completed by this approval.
+     */
+    public function revert(Request $request, Payment $payment): JsonResponse
+    {
+        $this->ensureAccountMatch($payment, $request);
+        if (!in_array($payment->status, ['approved', 'rejected'], true)) {
+            return response()->json(['message' => 'สามารถยกเลิกการตรวจสอบได้เฉพาะรายการที่อนุมัติหรือปฏิเสธแล้ว'], 422);
+        }
+
+        $previousStatus = $payment->status;
+
+        DB::transaction(function () use ($request, $payment, $previousStatus) {
+            // Refund pocket money if we deducted it on approve
+            if ($previousStatus === 'approved' && $payment->method === 'pocket_money') {
+                Customer::where('id', $payment->customer_id)
+                    ->increment('pocket_money', (float) $payment->amount);
+            }
+
+            $payment->update([
+                'status' => 'pending',
+                'approved_by' => null,
+                'approved_at' => null,
+                'reject_reason' => null,
+            ]);
+
+            // Recalc order paid amount + auto-adjust order status
+            $order = $payment->order;
+            if ($order) {
+                $order->recalculatePaid();
+                $order->refresh();
+                if ($order->status === 'completed' && (float) $order->remaining_amount > 0) {
+                    $order->update(['status' => 'in_progress']);
+                    PaymentLog::create([
+                        'order_id' => $order->id,
+                        'action' => 'order_status_changed',
+                        'summary' => 'ย้อนกลับสถานะเป็นอยู่ระหว่างดำเนินการ (ยกเลิกการอนุมัติชำระเงิน)',
+                        'user_id' => $request->user()->id,
+                    ]);
+                }
+            }
+
+            PaymentLog::create([
+                'payment_id' => $payment->id,
+                'order_id' => $payment->order_id,
+                'action' => 'reverted',
+                'summary' => 'ยกเลิกการตรวจสอบ (' . ($previousStatus === 'approved' ? 'อนุมัติ' : 'ปฏิเสธ') . ') ' . $payment->payment_number,
+                'user_id' => $request->user()->id,
+            ]);
+        });
 
         return response()->json(['payment' => $payment->fresh(['creator', 'approver'])]);
     }
