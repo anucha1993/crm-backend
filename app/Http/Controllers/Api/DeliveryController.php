@@ -332,6 +332,40 @@ class DeliveryController extends Controller
         return response()->json(['delivery' => $delivery]);
     }
 
+    /**
+     * Confirm that the signed delivery note (physical copy) has been returned
+     * by the driver to the office. Scanned separately from confirmDelivery
+     * since the driver may confirm delivery on-site but forget/delay bringing
+     * the paper note back — this lets the office reconcile issued vs returned.
+     */
+    public function confirmNoteReturn(Request $request, Delivery $delivery): JsonResponse
+    {
+        $this->ensureAccountMatch($delivery, $request);
+        if ($delivery->status === 'cancelled') {
+            return response()->json(['message' => 'ใบส่งของนี้ถูกยกเลิก'], 422);
+        }
+        if ($delivery->note_returned_at) {
+            return response()->json(['message' => 'ใบส่งของนี้รับคืนแล้ว'], 422);
+        }
+
+        $delivery->update([
+            'note_returned_at' => now(),
+            'note_returned_by' => $request->user()->id,
+        ]);
+
+        PaymentLog::create([
+            'order_id' => $delivery->order_id,
+            'action' => 'delivery_note_returned',
+            'summary' => 'รับคืนใบส่งของ ' . $delivery->delivery_number,
+            'details' => ['delivery_id' => $delivery->id],
+            'user_id' => $request->user()->id,
+        ]);
+
+        $delivery->load(['items.product.sizes', 'order', 'customer', 'creator:id,name', 'deliverer:id,name', 'noteReturnedBy:id,name']);
+
+        return response()->json(['delivery' => $delivery]);
+    }
+
     private function ensureAccountMatch(Delivery $delivery, Request $request): void
     {
         $accountType = $request->attributes->get('account_type');
@@ -352,6 +386,7 @@ class DeliveryController extends Controller
                 'items.product:id,name,code',
                 'items.product.sizes:id,product_id,length_unit',
                 'creator:id,name',
+                'noteReturnedBy:id,name',
             ])
             ->first();
 
@@ -518,6 +553,52 @@ class DeliveryController extends Controller
                 'total_pending' => round($pendingBills, 2),
                 'total_unpaid' => round($toCollect - $paidBills - $pendingBills, 2),
             ],
+        ]);
+    }
+
+    /**
+     * Reconciliation of physical delivery notes (ใบส่งของ) for a given day —
+     * how many were issued/carried out by drivers vs how many have actually
+     * been scanned back in at the office (note_returned_at).
+     */
+    public function noteReturnSummary(Request $request): JsonResponse
+    {
+        $accountType = $request->attributes->get('account_type');
+        $date = $request->input('date', now()->toDateString());
+
+        $query = Delivery::with(['order:id,order_number', 'customer:id,name', 'deliverer:id,name', 'noteReturnedBy:id,name'])
+            ->where('account_type', $accountType)
+            ->where('status', '!=', 'cancelled')
+            ->whereDate('delivery_date', $date);
+
+        $this->scopeToOwner($query, $request);
+
+        $deliveries = $query->orderBy('delivery_number')->get();
+
+        $rows = $deliveries->map(fn (Delivery $d) => [
+            'id' => $d->id,
+            'delivery_number' => $d->delivery_number,
+            'status' => $d->status,
+            'order_number' => $d->order?->order_number,
+            'customer_name' => $d->customer?->name,
+            'delivered_at' => $d->delivered_at,
+            'deliverer' => $d->deliverer,
+            'note_returned_at' => $d->note_returned_at,
+            'note_returned_by' => $d->noteReturnedBy,
+        ]);
+
+        $returned = $rows->whereNotNull('note_returned_at')->values();
+        $missing = $rows->whereNull('note_returned_at')->values();
+
+        return response()->json([
+            'date' => $date,
+            'summary' => [
+                'total' => $rows->count(),
+                'returned' => $returned->count(),
+                'missing' => $missing->count(),
+            ],
+            'returned_deliveries' => $returned,
+            'missing_deliveries' => $missing,
         ]);
     }
 

@@ -189,12 +189,14 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::middleware('permission:deliveries.view')->group(function () {
             Route::get('/deliveries', [DeliveryController::class, 'index']);
             Route::get('/deliveries/daily-summary', [DeliveryController::class, 'dailySummary']);
+            Route::get('/deliveries/note-return-summary', [DeliveryController::class, 'noteReturnSummary']);
             Route::get('/deliveries/calendar', [DeliveryController::class, 'calendar']);
             Route::get('/deliveries/{delivery}', [DeliveryController::class, 'show']);
             Route::get('/orders/{order}/delivery-remaining', [DeliveryController::class, 'orderRemaining']);
         });
         Route::middleware('permission:deliveries.create')->post('/orders/{order}/deliveries', [DeliveryController::class, 'store']);
         Route::middleware('permission:deliveries.confirm')->post('/deliveries/{delivery}/confirm', [DeliveryController::class, 'confirmDelivery']);
+        Route::middleware('permission:deliveries.confirm')->post('/deliveries/{delivery}/confirm-note-return', [DeliveryController::class, 'confirmNoteReturn']);
         Route::middleware('permission:deliveries.cancel')->post('/deliveries/{delivery}/cancel', [DeliveryController::class, 'cancel']);
 
         // Reports (scoped per account)

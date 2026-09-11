@@ -622,6 +622,10 @@ class PaymentController extends Controller
             'slip_image' => 'required|file|mimes:jpg,jpeg,png|max:5120',
             'amount' => 'nullable|numeric|min:0',
             'exclude_order_id' => 'nullable|integer',
+            // Duplicate slips return no transfer data from Slip2Go — allow a follow-up
+            // call that skips the duplicate check so the amount/sender/date can still
+            // be fetched and shown to the user for manual verification.
+            'bypass_duplicate_check' => 'nullable|boolean',
         ]);
 
         $slip2go = new Slip2goService();
@@ -631,6 +635,7 @@ class PaymentController extends Controller
 
         $result = $slip2go->verifyByImage($request->file('slip_image'), [
             'amount' => $request->amount,
+            'skip_duplicate_check' => $request->boolean('bypass_duplicate_check'),
         ]);
 
         // Check whether this slip (by transRef) was already recorded on a real order

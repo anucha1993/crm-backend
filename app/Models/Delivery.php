@@ -18,6 +18,7 @@ class Delivery extends Model
         'status', 'delivery_date', 'delivered_at', 'notes',
         'total_weight', 'suggested_vehicle',
         'delivered_by', 'created_by',
+        'note_returned_at', 'note_returned_by',
     ];
 
     protected function casts(): array
@@ -26,6 +27,7 @@ class Delivery extends Model
             'delivery_date' => 'date',
             'delivered_at' => 'datetime',
             'total_weight' => 'decimal:4',
+            'note_returned_at' => 'datetime',
         ];
     }
 
@@ -57,6 +59,11 @@ class Delivery extends Model
     public function deliverer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'delivered_by');
+    }
+
+    public function noteReturnedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'note_returned_by');
     }
 
     /**

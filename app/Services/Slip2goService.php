@@ -33,9 +33,10 @@ class Slip2goService
 
         $payload = [];
 
-        // Check duplicate
+        // Check duplicate — skippable so callers can re-verify a known-duplicate slip
+        // and still get back the parsed transfer data (amount/sender/date) for manual entry.
         $checkDuplicate = CompanySetting::getValue('slip2go_check_duplicate', 'true');
-        if ($checkDuplicate === 'true') {
+        if ($checkDuplicate === 'true' && empty($options['skip_duplicate_check'])) {
             $payload['checkDuplicate'] = true;
         }
 
