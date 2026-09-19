@@ -66,8 +66,10 @@ class InvoiceController extends Controller
             abort(404, 'ไม่พบคำสั่งซื้อในบัญชีปัจจุบัน');
         }
 
-        // Validate order is fully paid
-        if ((float) $order->remaining_amount > 0) {
+        // Validate order is fully paid — bypassed for credit customers (ลูกค้าเครดิต),
+        // who are allowed to receive the invoice before settling payment.
+        $isCreditCustomer = (bool) $order->customer()->value('is_credit');
+        if (!$isCreditCustomer && (float) $order->remaining_amount > 0) {
             return response()->json([
                 'message' => 'ไม่สามารถออกใบกำกับภาษีได้ คำสั่งซื้อยังชำระเงินไม่ครบ',
             ], 422);
@@ -166,10 +168,16 @@ class InvoiceController extends Controller
         $query = Order::query()
             ->where('account_type', $accountType)
             ->where('status', '!=', 'cancelled')
-            ->whereRaw('CAST(remaining_amount AS DECIMAL(15,2)) <= 0')
-            ->whereRaw('CAST(paid_amount AS DECIMAL(15,2)) > 0')
+            ->where(function ($q) {
+                // Normal orders only show up once fully paid; credit customers
+                // (is_credit) are allowed to be invoiced regardless of balance.
+                $q->where(function ($qq) {
+                    $qq->whereRaw('CAST(remaining_amount AS DECIMAL(15,2)) <= 0')
+                        ->whereRaw('CAST(paid_amount AS DECIMAL(15,2)) > 0');
+                })->orWhereHas('customer', fn ($cq) => $cq->where('is_credit', true));
+            })
             ->with([
-                'customer:id,code,name,tax_id,phone',
+                'customer:id,code,name,tax_id,phone,is_credit',
                 'invoices' => fn ($q) => $q->where('status', 'issued')
                     ->select('id', 'order_id', 'invoice_number', 'issue_date'),
             ])
@@ -208,9 +216,11 @@ class InvoiceController extends Controller
                     'name' => $order->customer->name,
                     'tax_id' => $order->customer->tax_id,
                     'phone' => $order->customer->phone,
+                    'is_credit' => (bool) $order->customer->is_credit,
                 ] : null,
                 'total' => (float) $order->total,
                 'paid_amount' => (float) $order->paid_amount,
+                'remaining_amount' => (float) $order->remaining_amount,
                 'last_paid_at' => $order->last_paid_at,
                 'invoice_issued' => (bool) $invoice,
                 'invoice' => $invoice ? [

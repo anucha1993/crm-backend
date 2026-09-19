@@ -46,6 +46,7 @@ class CustomerController extends Controller
         $request->validate([
             'name' => 'required|string|max:255|unique:customers,name',
             'type' => 'nullable|in:regular,general',
+            'is_credit' => 'nullable|boolean',
             'customer_level_id' => 'nullable|exists:customer_levels,id',
             'tax_id' => 'nullable|string|max:20|unique:customers,tax_id',
             'contact_name' => 'nullable|string|max:255',
@@ -144,6 +145,7 @@ class CustomerController extends Controller
         $request->validate([
             'name' => ['sometimes', 'string', 'max:255', Rule::unique('customers', 'name')->ignore($customer->id)],
             'type' => 'sometimes|in:regular,general',
+            'is_credit' => 'nullable|boolean',
             'customer_level_id' => 'nullable|exists:customer_levels,id',
             'tax_id' => ['nullable', 'string', 'max:20', Rule::unique('customers', 'tax_id')->ignore($customer->id)],
             'contact_name' => 'nullable|string|max:255',

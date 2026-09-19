@@ -11,6 +11,7 @@ class Customer extends Model
     protected $fillable = [
         'code',
         'type',
+        'is_credit',
         'customer_level_id',
         'name',
         'tax_id',
@@ -27,6 +28,7 @@ class Customer extends Model
     {
         return [
             'last_activity_at' => 'datetime',
+            'is_credit' => 'boolean',
         ];
     }
 
