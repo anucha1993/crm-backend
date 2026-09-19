@@ -71,7 +71,7 @@ class CustomerController extends Controller
 
             if ($request->filled('shipping_addresses')) {
                 foreach ($request->shipping_addresses as $addr) {
-                    $customer->addresses()->create($addr);
+                    $customer->addresses()->create($this->sanitizeAddress($addr));
                 }
             }
 
@@ -176,10 +176,11 @@ class CustomerController extends Controller
                 $customer->addresses()->whereNotIn('id', $keepIds)->delete();
 
                 foreach ($request->shipping_addresses as $addr) {
+                    $clean = $this->sanitizeAddress($addr);
                     if (!empty($addr['id'])) {
-                        $customer->addresses()->where('id', $addr['id'])->update($addr);
+                        $customer->addresses()->where('id', $addr['id'])->update($clean);
                     } else {
-                        $customer->addresses()->create($addr);
+                        $customer->addresses()->create($clean);
                     }
                 }
             }
@@ -195,6 +196,17 @@ class CustomerController extends Controller
         $customer->delete();
 
         return response()->json(['message' => 'ลบลูกค้าสำเร็จ']);
+    }
+
+    /**
+     * Keep only the actual editable columns from a shipping_addresses[] entry —
+     * the frontend round-trips the full address object it was given (id,
+     * created_at, updated_at, ...), which must never be forwarded into a raw
+     * query-builder update() since that bypasses model $fillable protection.
+     */
+    private function sanitizeAddress(array $addr): array
+    {
+        return collect($addr)->only(['label', 'contact_name', 'phone', 'address', 'is_default'])->toArray();
     }
 
     public function nextCode(): JsonResponse
