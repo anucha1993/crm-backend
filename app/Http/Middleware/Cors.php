@@ -3,8 +3,10 @@
 namespace App\Http\Middleware;
 
 use Closure;
+use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Throwable;
 
 class Cors
 {
@@ -22,7 +24,14 @@ class Cors
         if ($request->isMethod('OPTIONS')) {
             $response = response('', 204);
         } else {
-            $response = $next($request);
+            try {
+                $response = $next($request);
+            } catch (Throwable $e) {
+                // Without this, an exception thrown downstream skips the header-setting
+                // code below entirely, and the browser reports a misleading CORS error
+                // instead of the real 4xx/5xx response.
+                $response = app(ExceptionHandler::class)->render($request, $e);
+            }
         }
 
         $isAllowed = $origin && ($allowAll || in_array($origin, $allowedOrigins, true) || $this->matchesWildcard($origin, $allowedOrigins));
