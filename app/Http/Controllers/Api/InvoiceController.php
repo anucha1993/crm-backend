@@ -323,13 +323,22 @@ class InvoiceController extends Controller
         $mpdf = new Mpdf([
             'mode' => 'utf-8',
             'format' => 'A4',
-            'default_font' => 'garuda',
+            'default_font' => 'angsananew',
             'margin_top' => 5,
             'margin_bottom' => 8,
             'margin_left' => 8,
             'margin_right' => 8,
-            'autoLangToFont' => true,
-            'autoScriptToLang' => true,
+            'fontDir' => [public_path('fonts')],
+            'fontdata' => [
+                'angsananew' => [
+                    'R' => 'angsana.ttc',
+                    'B' => 'angsana.ttc',
+                    'I' => 'angsana.ttc',
+                    'BI' => 'angsana.ttc',
+                    // Font index within the .ttc collection (1-based): Regular, Bold, Italic, Bold-Italic
+                    'TTCfontID' => ['R' => 1, 'B' => 2, 'I' => 3, 'BI' => 4],
+                ],
+            ],
             'tempDir' => storage_path('app/mpdf-temp'),
         ]);
 

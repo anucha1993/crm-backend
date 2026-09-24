@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <style>
     body {
-        font-family: garuda, sans-serif;
+        font-family: angsananew, sans-serif;
         font-size: 10pt;
         color: #000;
         line-height: 1.35;
@@ -174,7 +174,7 @@
                 <th width="10%">หน่วยนับ</th>
                 <th>รายการสินค้า</th>
                 <th width="17%">ราคาต่อหน่วย</th>
-                <th width="18%">จำนวนเงินไม่รวมภาษี</th>
+                <th width="18%">จำนวนเงิน</th>
             </tr>
         </thead>
         <tbody>
