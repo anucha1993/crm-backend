@@ -183,6 +183,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/invoices/{invoice}', [InvoiceController::class, 'show']);
         });
         Route::middleware('permission:invoices.create')->post('/orders/{order}/invoices', [InvoiceController::class, 'store']);
+        Route::middleware('permission:invoices.create')->put('/invoices/{invoice}', [InvoiceController::class, 'update']);
         Route::middleware('permission:invoices.cancel')->post('/invoices/{invoice}/cancel', [InvoiceController::class, 'cancel']);
 
         // Deliveries

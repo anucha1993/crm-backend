@@ -94,6 +94,7 @@ class InvoiceController extends Controller
 
         $request->validate([
             'notes' => 'nullable|string|max:1000',
+            'issue_date' => 'nullable|date|before_or_equal:today',
         ]);
 
         $order->load(['items.product', 'customer', 'shippingAddress']);
@@ -106,7 +107,7 @@ class InvoiceController extends Controller
                 'customer_id' => $order->customer_id,
                 'customer_address_id' => $order->customer_address_id,
                 'status' => 'issued',
-                'issue_date' => now()->toDateString(),
+                'issue_date' => $request->input('issue_date', now()->toDateString()),
                 'subtotal' => $order->subtotal,
                 'discount_type' => $order->discount_type,
                 'discount_value' => $order->discount_value,
@@ -277,6 +278,37 @@ class InvoiceController extends Controller
             ],
             'user_id' => $request->user()->id,
         ]);
+
+        return response()->json(['invoice' => $invoice]);
+    }
+
+    /**
+     * Correct the issue_date of an already-issued invoice (e.g. fix a wrong
+     * backdate). Only the date is editable — everything else is derived
+     * from the order at creation time.
+     */
+    public function update(Request $request, Invoice $invoice): JsonResponse
+    {
+        $this->ensureAccountMatch($invoice, $request);
+        if ($invoice->status !== 'issued') {
+            return response()->json(['message' => 'แก้ไขได้เฉพาะใบกำกับภาษีที่ยังไม่ถูกยกเลิก'], 422);
+        }
+
+        $request->validate([
+            'issue_date' => 'required|date|before_or_equal:today',
+        ]);
+
+        $invoice->update(['issue_date' => $request->issue_date]);
+
+        PaymentLog::create([
+            'order_id' => $invoice->order_id,
+            'action' => 'invoice_date_updated',
+            'summary' => 'แก้ไขวันที่ใบกำกับภาษี ' . $invoice->invoice_number . ' เป็น ' . $invoice->issue_date->toDateString(),
+            'details' => ['invoice_id' => $invoice->id],
+            'user_id' => $request->user()->id,
+        ]);
+
+        $invoice->load(['order:id,order_number', 'customer:id,name,code', 'creator:id,name']);
 
         return response()->json(['invoice' => $invoice]);
     }
