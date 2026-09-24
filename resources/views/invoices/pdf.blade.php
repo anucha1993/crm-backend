@@ -5,7 +5,7 @@
 <style>
     body {
         font-family: angsananew, sans-serif;
-        font-size: 10pt;
+        font-size: 16pt;
         color: #000;
         line-height: 1.35;
     }
@@ -24,7 +24,7 @@
     .items {
         border-collapse: collapse;
         width: 100%;
-        font-size: 9pt;
+        font-size: 14pt;
     }
     /* Base: vertical dividers only. NO !important so inline styles can override */
     .items th, .items td {
@@ -53,12 +53,12 @@
     }
     .text-center { text-align: center !important; }
     .text-end { text-align: right !important; }
-    .fs-14 { font-size: 14pt; }
-    .fs-12 { font-size: 12pt; }
-    .fs-11 { font-size: 11pt; }
-    .fs-10 { font-size: 10pt; }
-    .fs-9  { font-size: 9pt; }
-    .title { text-align: center; font-size: 14pt; font-weight: bold; }
+    .fs-14 { font-size: 20pt; }
+    .fs-12 { font-size: 18pt; }
+    .fs-11 { font-size: 17pt; }
+    .fs-10 { font-size: 16pt; }
+    .fs-9  { font-size: 12pt; }
+    .title { text-align: center; font-size: 20pt; font-weight: bold; }
     .sig-line { border-top: 1px dotted #000; margin-top: 30px; }
 </style>
 </head>
@@ -103,7 +103,7 @@
 @foreach($chunks as $chunkIndex => $chunk)
 
     {{-- ===== Title ===== --}}
-    <div class="title">ใบเสร็จรับเงิน / ใบกำกับภาษี</div>
+    <div class="title"><b>ใบเสร็จรับเงิน / ใบกำกับภาษี</b></div>
 
     {{-- ===== Header: Company block (top row) + Customer block (bottom row), ONE table.
          "เลขที่" aligns with the company row; "วันที่" aligns with the customer row.
@@ -226,10 +226,11 @@
             @if($chunkIndex === $totalPages - 1)
                 @php
                     // A4 usable = 806pt (297mm - 5mm top - 8mm bottom margins).
-                    // Header grew taller after adding the row-spacer + wider <br><br> gaps
-                    // (measured: ~583pt available before header+totals+sig eat into it).
-                    $itemRowH = 30;
-                    $availItems = 545;
+                    // Header/totals/signature text grew ~1.5x when the fs-* classes were
+                    // bumped up for Angsana New, so both constants below are scaled from
+                    // the old (9pt items / 545pt available) tuning to match.
+                    $itemRowH = 47;
+                    $availItems = 508;
                     $itemsHeightEst = $chunk->count() * $itemRowH;
                     $fillerHeight = max(0, $availItems - $itemsHeightEst);
                 @endphp
@@ -295,18 +296,18 @@
     {{-- ===== Amount in words + Signatures (LAST page only) ===== --}}
     @if($chunkIndex === $totalPages - 1)
         <div class="fs-10" style="margin-top: 6px !important;">
-            <b>จำนวนเงินรวมทั้งสิ้น (ตัวอักษร)</b> &nbsp; ({{ $bahtText }})
+            <b>จำนวนเงินรวมทั้งสิ้น (ตัวอักษร) </b> ({{ $bahtText }})
         </div>
 
         <table width="100%" cellpadding="0" cellspacing="0" style="margin-top: 18px !important;">
             <tr>
                 <td width="50%" class="text-center fs-10">
-                    <div class="sig-line">&nbsp;</div>
+                    <div class="sig-line"></div>
                     <br>
                     ลงชื่อ..........................................ผู้รับสินค้า
                 </td>
                 <td width="50%" class="text-center fs-10">
-                    <div class="sig-line">&nbsp;</div>
+                    <div class="sig-line"></div>
                     <br>
                     ลงชื่อ..........................................ผู้รับเงิน
                 </td>

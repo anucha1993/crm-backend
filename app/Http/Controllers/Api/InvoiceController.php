@@ -331,12 +331,17 @@ class InvoiceController extends Controller
             'fontDir' => [public_path('fonts')],
             'fontdata' => [
                 'angsananew' => [
-                    'R' => 'angsana.ttc',
-                    'B' => 'angsana.ttc',
-                    'I' => 'angsana.ttc',
-                    'BI' => 'angsana.ttc',
-                    // Font index within the .ttc collection (1-based): Regular, Bold, Italic, Bold-Italic
-                    'TTCfontID' => ['R' => 1, 'B' => 2, 'I' => 3, 'BI' => 4],
+                    // Standalone .ttf files extracted from angsana.ttc — the installed
+                    // mpdf/mpdf 8.3.1 has a bug where TTCfontID always resolves to font #1
+                    // regardless of style (isset() typo in Mpdf.php), so B/I/BI silently
+                    // rendered as Regular when pointed at the .ttc directly with TTCfontID.
+                    'R' => 'angsana-regular.ttf',
+                    'B' => 'angsana-bold.ttf',
+                    'I' => 'angsana-italic.ttf',
+                    'BI' => 'angsana-bolditalic.ttf',
+                    // Needed for correct Thai mark stacking (e.g. "พื้น", "เร็จ") — without
+                    // this, stacked tone marks/vowels overlap instead of positioning above each other.
+                    'useOTL' => 0xFF,
                 ],
             ],
             'tempDir' => storage_path('app/mpdf-temp'),
