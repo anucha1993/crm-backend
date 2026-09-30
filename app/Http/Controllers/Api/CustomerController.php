@@ -112,7 +112,7 @@ class CustomerController extends Controller
 
         $invoices = $customer->invoices()
             ->orderByDesc('created_at')
-            ->get(['id', 'account_type', 'invoice_number', 'order_id', 'status', 'total', 'issue_date', 'created_at']);
+            ->get(['id', 'account_type', 'invoice_number', 'cancelled_invoice_number', 'order_id', 'status', 'total', 'issue_date', 'created_at']);
 
         $payments = $customer->payments()
             ->orderByDesc('created_at')

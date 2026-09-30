@@ -134,7 +134,7 @@
                 @endif
             </td>
             <td valign="top" width="30%" style="text-align: right;">
-                <div class="fs-10">เลขที่ &nbsp; {{ $invoice->invoice_number }}</div>
+                <div class="fs-10">เลขที่ &nbsp; {{ $number }}</div>
             </td>
         </tr>
         {{-- Spacer row: small blank line, matches the reduced $lineGap used between lines above --}}

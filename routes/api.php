@@ -177,13 +177,16 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::middleware('permission:payments.reject')->post('/payments/{payment}/reject', [PaymentController::class, 'reject']);
 
         // Invoices
+        // Registered before /invoices/{invoice} so "next-number" isn't captured as an id
+        Route::middleware('permission:invoices.create')->get('/invoices/next-number', [InvoiceController::class, 'nextNumber']);
         Route::middleware('permission:invoices.view')->group(function () {
             Route::get('/invoices/pending', [InvoiceController::class, 'pending']);
             Route::get('/invoices', [InvoiceController::class, 'index']);
             Route::get('/invoices/{invoice}', [InvoiceController::class, 'show']);
         });
         Route::middleware('permission:invoices.create')->post('/orders/{order}/invoices', [InvoiceController::class, 'store']);
-        Route::middleware('permission:invoices.create')->put('/invoices/{invoice}', [InvoiceController::class, 'update']);
+        // Date edits need invoices.create, number edits need invoices.edit_number (checked in the controller)
+        Route::middleware('permission:invoices.create,invoices.edit_number')->put('/invoices/{invoice}', [InvoiceController::class, 'update']);
         Route::middleware('permission:invoices.cancel')->post('/invoices/{invoice}/cancel', [InvoiceController::class, 'cancel']);
 
         // Deliveries

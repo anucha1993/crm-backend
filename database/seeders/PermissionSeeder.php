@@ -40,6 +40,7 @@ class PermissionSeeder extends Seeder
                 ['name' => 'invoices.view', 'display_name' => 'ดูใบกำกับภาษี'],
                 ['name' => 'invoices.create', 'display_name' => 'สร้างใบกำกับภาษี'],
                 ['name' => 'invoices.cancel', 'display_name' => 'ยกเลิกใบกำกับภาษี'],
+                ['name' => 'invoices.edit_number', 'display_name' => 'แก้ไขเลขที่ใบกำกับภาษี'],
             ],
             'deliveries' => [
                 ['name' => 'deliveries.view', 'display_name' => 'ดูใบส่งสินค้า'],

@@ -13,7 +13,7 @@ class Invoice extends Model
 
     protected $fillable = [
         'account_type',
-        'invoice_number', 'order_id', 'customer_id', 'customer_address_id',
+        'invoice_number', 'cancelled_invoice_number', 'order_id', 'customer_id', 'customer_address_id',
         'status', 'issue_date', 'subtotal', 'discount_type', 'discount_value',
         'discount_amount', 'vat_rate', 'vat_amount', 'total',
         'notes', 'created_by', 'cancelled_by', 'cancelled_at', 'cancel_reason',
@@ -76,6 +76,9 @@ class Invoice extends Model
 
         $last = static::withoutGlobalScope('account')
             ->where('invoice_number', 'like', $prefix . '%')
+            // Only follow numbers in the standard format, so a hand-edited
+            // number (see invoices.edit_number) can't break the sequence.
+            ->whereRaw('invoice_number REGEXP ?', ['^' . $prefix . '[0-9]{6}$'])
             ->orderBy('invoice_number', 'desc')
             ->first();
 

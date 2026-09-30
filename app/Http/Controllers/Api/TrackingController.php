@@ -34,7 +34,8 @@ class TrackingController extends Controller
             $delivery = Delivery::withoutGlobalScope('account')->where('delivery_number', $number)->first();
             $order = $delivery ? $this->findOrderById($delivery->order_id) : null;
         } elseif (str_starts_with($upper, 'IV')) {
-            $invoice = Invoice::withoutGlobalScope('account')->where('invoice_number', $number)->first();
+            $invoice = Invoice::withoutGlobalScope('account')->where('invoice_number', $number)->first()
+                ?? Invoice::withoutGlobalScope('account')->where('cancelled_invoice_number', $number)->latest('id')->first();
             $order = $invoice ? $this->findOrderById($invoice->order_id) : null;
         } elseif (str_starts_with($upper, 'PAY-')) {
             $payment = Payment::withoutGlobalScope('account')->where('payment_number', $number)->first();
@@ -112,9 +113,9 @@ class TrackingController extends Controller
             $invoices = $order->invoices()
                 ->withoutGlobalScope('account')
                 ->orderBy('created_at')
-                ->get(['id', 'invoice_number', 'status', 'issue_date', 'total'])
+                ->get(['id', 'invoice_number', 'cancelled_invoice_number', 'status', 'issue_date', 'total'])
                 ->map(fn ($i) => [
-                    'number' => $i->invoice_number,
+                    'number' => $i->invoice_number ?? $i->cancelled_invoice_number,
                     'status' => $i->status,
                     'issue_date' => optional($i->issue_date)->toDateString(),
                     'total' => $i->total,

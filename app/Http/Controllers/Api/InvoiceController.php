@@ -12,6 +12,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 use Laravel\Sanctum\PersonalAccessToken;
 use Mpdf\Mpdf;
 
@@ -31,6 +32,7 @@ class InvoiceController extends Controller
             $search = $request->search;
             $query->where(function ($q) use ($search) {
                 $q->where('invoice_number', 'like', "%{$search}%")
+                  ->orWhere('cancelled_invoice_number', 'like', "%{$search}%")
                   ->orWhereHas('order', fn ($oq) => $oq->where('order_number', 'like', "%{$search}%"))
                   ->orWhereHas('customer', fn ($cq) => $cq->where('name', 'like', "%{$search}%"));
             });
@@ -57,6 +59,18 @@ class InvoiceController extends Controller
         ]);
 
         return response()->json(['invoice' => $invoice]);
+    }
+
+    /**
+     * Preview of the number the system would assign right now, shown in the
+     * issue dialog (editable there for users with invoices.edit_number).
+     */
+    public function nextNumber(Request $request): JsonResponse
+    {
+        return response()->json([
+            'invoice_number' => Invoice::generateNumber(),
+            'can_edit' => $this->userCan($request, 'invoices.edit_number'),
+        ]);
     }
 
     public function store(Request $request, Order $order): JsonResponse
@@ -92,17 +106,24 @@ class InvoiceController extends Controller
             ], 422);
         }
 
+        // A custom number is only honoured for users allowed to edit it;
+        // everyone else always gets the system-generated number.
+        $canEditNumber = $this->userCan($request, 'invoices.edit_number');
         $request->validate([
             'notes' => 'nullable|string|max:1000',
             'issue_date' => 'nullable|date|before_or_equal:today',
+            'invoice_number' => $canEditNumber ? $this->numberRules() : 'nullable',
         ]);
+        $customNumber = $canEditNumber && $request->filled('invoice_number')
+            ? trim($request->invoice_number)
+            : null;
 
         $order->load(['items.product', 'customer', 'shippingAddress']);
 
-        $invoice = DB::transaction(function () use ($request, $order) {
+        $invoice = DB::transaction(function () use ($request, $order, $customNumber) {
             $invoice = Invoice::create([
                 'account_type' => $order->account_type,
-                'invoice_number' => Invoice::generateNumber(),
+                'invoice_number' => $customNumber ?? Invoice::generateNumber(),
                 'order_id' => $order->id,
                 'customer_id' => $order->customer_id,
                 'customer_address_id' => $order->customer_address_id,
@@ -261,8 +282,12 @@ class InvoiceController extends Controller
             'reason' => 'required|string|max:500',
         ]);
 
+        // Release the number (→ NULL) so it can be reused; keep the original for audit / PDF.
+        $number = $invoice->invoice_number;
         $invoice->update([
             'status' => 'cancelled',
+            'invoice_number' => null,
+            'cancelled_invoice_number' => $number,
             'cancelled_by' => $request->user()->id,
             'cancelled_at' => now(),
             'cancel_reason' => $request->reason,
@@ -271,9 +296,10 @@ class InvoiceController extends Controller
         PaymentLog::create([
             'order_id' => $invoice->order_id,
             'action' => 'invoice_cancelled',
-            'summary' => 'ยกเลิกใบกำกับภาษี ' . $invoice->invoice_number,
+            'summary' => 'ยกเลิกใบกำกับภาษี ' . $number,
             'details' => [
                 'invoice_id' => $invoice->id,
+                'invoice_number' => $number,
                 'reason' => $request->reason,
             ],
             'user_id' => $request->user()->id,
@@ -283,9 +309,9 @@ class InvoiceController extends Controller
     }
 
     /**
-     * Correct the issue_date of an already-issued invoice (e.g. fix a wrong
-     * backdate). Only the date is editable — everything else is derived
-     * from the order at creation time.
+     * Correct the issue_date and/or invoice_number of an already-issued invoice.
+     * Date changes need invoices.create; number changes need invoices.edit_number.
+     * Everything else is derived from the order at creation time.
      */
     public function update(Request $request, Invoice $invoice): JsonResponse
     {
@@ -295,22 +321,71 @@ class InvoiceController extends Controller
         }
 
         $request->validate([
-            'issue_date' => 'required|date|before_or_equal:today',
+            'issue_date' => 'required_without:invoice_number|nullable|date|before_or_equal:today',
+            'invoice_number' => ['required_without:issue_date', ...$this->numberRules($invoice->id)],
         ]);
 
-        $invoice->update(['issue_date' => $request->issue_date]);
+        $oldNumber = $invoice->invoice_number;
+        $dateChanged = $request->filled('issue_date')
+            && $request->issue_date !== $invoice->issue_date->toDateString();
+        $numberChanged = $request->filled('invoice_number')
+            && trim($request->invoice_number) !== $oldNumber;
 
-        PaymentLog::create([
-            'order_id' => $invoice->order_id,
-            'action' => 'invoice_date_updated',
-            'summary' => 'แก้ไขวันที่ใบกำกับภาษี ' . $invoice->invoice_number . ' เป็น ' . $invoice->issue_date->toDateString(),
-            'details' => ['invoice_id' => $invoice->id],
-            'user_id' => $request->user()->id,
-        ]);
+        if ($dateChanged && !$this->userCan($request, 'invoices.create')) {
+            return response()->json(['message' => 'คุณไม่มีสิทธิ์แก้ไขวันที่ใบกำกับภาษี'], 403);
+        }
+        if ($numberChanged && !$this->userCan($request, 'invoices.edit_number')) {
+            return response()->json(['message' => 'คุณไม่มีสิทธิ์แก้ไขเลขที่ใบกำกับภาษี'], 403);
+        }
+
+        $changes = [];
+        if ($dateChanged) $changes['issue_date'] = $request->issue_date;
+        if ($numberChanged) $changes['invoice_number'] = trim($request->invoice_number);
+
+        if ($changes) {
+            $invoice->update($changes);
+
+            if ($dateChanged) {
+                PaymentLog::create([
+                    'order_id' => $invoice->order_id,
+                    'action' => 'invoice_date_updated',
+                    'summary' => 'แก้ไขวันที่ใบกำกับภาษี ' . $invoice->invoice_number . ' เป็น ' . $invoice->issue_date->toDateString(),
+                    'details' => ['invoice_id' => $invoice->id],
+                    'user_id' => $request->user()->id,
+                ]);
+            }
+            if ($numberChanged) {
+                PaymentLog::create([
+                    'order_id' => $invoice->order_id,
+                    'action' => 'invoice_number_updated',
+                    'summary' => 'แก้ไขเลขที่ใบกำกับภาษี ' . $oldNumber . ' เป็น ' . $invoice->invoice_number,
+                    'details' => [
+                        'invoice_id' => $invoice->id,
+                        'old_number' => $oldNumber,
+                        'new_number' => $invoice->invoice_number,
+                    ],
+                    'user_id' => $request->user()->id,
+                ]);
+            }
+        }
 
         $invoice->load(['order:id,order_number', 'customer:id,name,code', 'creator:id,name']);
 
         return response()->json(['invoice' => $invoice]);
+    }
+
+    private function userCan(Request $request, string $permission): bool
+    {
+        $user = $request->user();
+        return $user->hasRole('admin') || $user->hasPermission($permission);
+    }
+
+    private function numberRules(?int $ignoreId = null): array
+    {
+        return [
+            'nullable', 'string', 'max:50', 'regex:/^[A-Za-z0-9\-\/]+$/',
+            Rule::unique('invoices', 'invoice_number')->ignore($ignoreId),
+        ];
     }
 
     private function ensureAccountMatch(Invoice $invoice, Request $request): void
@@ -346,10 +421,11 @@ class InvoiceController extends Controller
         $issueDate = $invoice->issue_date->format('d/m/') . $buddhistYear;
         $bahtText = $this->numberToThaiText((float) $invoice->total);
 
-        $qrData = $invoice->invoice_number;
+        $number = $invoice->invoice_number ?? $invoice->cancelled_invoice_number;
+        $qrData = $number;
 
         $html = view('invoices.pdf', compact(
-            'invoice', 'company', 'isVat', 'logoPath', 'issueDate', 'bahtText', 'qrData'
+            'invoice', 'company', 'isVat', 'logoPath', 'issueDate', 'bahtText', 'qrData', 'number'
         ))->render();
 
         $mpdf = new Mpdf([
@@ -379,7 +455,7 @@ class InvoiceController extends Controller
             'tempDir' => storage_path('app/mpdf-temp'),
         ]);
 
-        $mpdf->SetTitle('ใบกำกับภาษี ' . $invoice->invoice_number);
+        $mpdf->SetTitle('ใบกำกับภาษี ' . $number);
         $mpdf->SetAuthor($company['name'] ?? 'CRM');
         if ($invoice->status === 'cancelled') {
             $mpdf->SetWatermarkText('ยกเลิก', 0.12);
@@ -389,7 +465,7 @@ class InvoiceController extends Controller
 
         return response($mpdf->Output('', 'S'), 200, [
             'Content-Type' => 'application/pdf',
-            'Content-Disposition' => 'inline; filename="' . $invoice->invoice_number . '.pdf"',
+            'Content-Disposition' => 'inline; filename="' . $number . '.pdf"',
         ]);
     }
 
