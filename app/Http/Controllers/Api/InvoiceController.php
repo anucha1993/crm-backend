@@ -106,9 +106,11 @@ class InvoiceController extends Controller
             ], 422);
         }
 
-        // A custom number is only honoured for users allowed to edit it;
-        // everyone else always gets the system-generated number.
-        $canEditNumber = $this->userCan($request, 'invoices.edit_number');
+        // Cash bills never get an invoice number (it stays NULL).
+        // For tax invoices, a custom number is only honoured for users allowed
+        // to edit it; everyone else always gets the system-generated number.
+        $isCash = $order->account_type === 'cash';
+        $canEditNumber = !$isCash && $this->userCan($request, 'invoices.edit_number');
         $request->validate([
             'notes' => 'nullable|string|max:1000',
             'issue_date' => 'nullable|date|before_or_equal:today',
@@ -120,10 +122,10 @@ class InvoiceController extends Controller
 
         $order->load(['items.product', 'customer', 'shippingAddress']);
 
-        $invoice = DB::transaction(function () use ($request, $order, $customNumber) {
+        $invoice = DB::transaction(function () use ($request, $order, $customNumber, $isCash) {
             $invoice = Invoice::create([
                 'account_type' => $order->account_type,
-                'invoice_number' => $customNumber ?? Invoice::generateNumber(),
+                'invoice_number' => $isCash ? null : ($customNumber ?? Invoice::generateNumber()),
                 'order_id' => $order->id,
                 'customer_id' => $order->customer_id,
                 'customer_address_id' => $order->customer_address_id,
@@ -161,7 +163,7 @@ class InvoiceController extends Controller
             PaymentLog::create([
                 'order_id' => $order->id,
                 'action' => 'invoice_created',
-                'summary' => 'ออกใบกำกับภาษี ' . $invoice->invoice_number,
+                'summary' => $isCash ? 'ออกบิลเงินสด' : 'ออกใบกำกับภาษี ' . $invoice->invoice_number,
                 'details' => [
                     'invoice_id' => $invoice->id,
                     'invoice_number' => $invoice->invoice_number,
@@ -296,7 +298,7 @@ class InvoiceController extends Controller
         PaymentLog::create([
             'order_id' => $invoice->order_id,
             'action' => 'invoice_cancelled',
-            'summary' => 'ยกเลิกใบกำกับภาษี ' . $number,
+            'summary' => $invoice->account_type === 'cash' ? 'ยกเลิกบิลเงินสด' : 'ยกเลิกใบกำกับภาษี ' . $number,
             'details' => [
                 'invoice_id' => $invoice->id,
                 'invoice_number' => $number,
@@ -318,6 +320,10 @@ class InvoiceController extends Controller
         $this->ensureAccountMatch($invoice, $request);
         if ($invoice->status !== 'issued') {
             return response()->json(['message' => 'แก้ไขได้เฉพาะใบกำกับภาษีที่ยังไม่ถูกยกเลิก'], 422);
+        }
+
+        if ($invoice->account_type === 'cash' && $request->filled('invoice_number')) {
+            return response()->json(['message' => 'บิลเงินสดไม่มีเลขที่ใบกำกับภาษี'], 422);
         }
 
         $request->validate([
@@ -421,7 +427,8 @@ class InvoiceController extends Controller
         $issueDate = $invoice->issue_date->format('d/m/') . $buddhistYear;
         $bahtText = $this->numberToThaiText((float) $invoice->total);
 
-        $number = $invoice->invoice_number ?? $invoice->cancelled_invoice_number;
+        // Cash bills have no invoice number — fall back to the order number for file name / QR.
+        $number = $invoice->invoice_number ?? $invoice->cancelled_invoice_number ?? $invoice->order?->order_number;
         $qrData = $number;
 
         $html = view('invoices.pdf', compact(
