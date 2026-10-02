@@ -9,6 +9,7 @@ use App\Models\Delivery;
 use App\Models\Invoice;
 use App\Models\Order;
 use App\Models\Payment;
+use App\Models\Quotation;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -136,41 +137,256 @@ class ReportController extends Controller
 
         $from = $request->input('from', now()->startOfMonth()->toDateString());
         $to = $request->input('to', now()->endOfMonth()->toDateString());
+        $today = now()->toDateString();
+        $staleBefore = now()->subDays(30)->toDateString();
 
-        $sellers = Order::where('status', '!=', 'cancelled')
+        // A sales-restricted user only sees their own performance row.
+        $restricted = $this->isSalesRestricted($request);
+        $ownerId = $request->user()->id;
+
+        // Orders are auto-created by whoever approves the quotation, so the seller
+        // is the quotation's creator (falling back to the order's creator).
+        $orderSeller = 'COALESCE(quotations.created_by, orders.created_by)';
+
+        // ── Quotation funnel (cohort = quotations created in the period) ──
+        $openExpired = "quotations.status IN ('draft','sent') AND quotations.valid_until IS NOT NULL AND quotations.valid_until < ?";
+        $approvedAt = '(SELECT MIN(o.created_at) FROM orders o WHERE o.quotation_id = quotations.id)';
+
+        $quoteStats = Quotation::query()
+            ->whereNotNull('quotations.created_by')
+            ->whereDate('quotations.created_at', '>=', $from)
+            ->whereDate('quotations.created_at', '<=', $to)
+            ->when($restricted, fn ($q) => $q->where('quotations.created_by', $ownerId))
+            ->select(
+                'quotations.created_by as seller_id',
+                DB::raw('COUNT(*) as quote_count'),
+                DB::raw('SUM(quotations.total) as quote_value'),
+                DB::raw("SUM(quotations.status = 'draft') as draft_count"),
+                DB::raw("SUM(quotations.status = 'sent') as sent_count"),
+                DB::raw("SUM(quotations.status = 'approved') as approved_count"),
+                DB::raw("SUM(quotations.status = 'rejected') as rejected_count"),
+                DB::raw("SUM(quotations.status = 'cancelled') as cancelled_count"),
+                DB::raw("SUM(CASE WHEN quotations.status = 'approved' THEN quotations.total ELSE 0 END) as approved_value"),
+                DB::raw("SUM(CASE WHEN quotations.status IN ('rejected','cancelled') THEN quotations.total ELSE 0 END) as lost_value"),
+                DB::raw('AVG(quotations.revision_number) as avg_revisions'),
+                DB::raw('COUNT(DISTINCT quotations.customer_id) as quoted_customers'),
+                DB::raw("AVG(CASE WHEN quotations.status = 'approved' THEN TIMESTAMPDIFF(HOUR, quotations.created_at, {$approvedAt}) / 24 END) as avg_days_to_approve")
+            )
+            ->selectRaw("SUM({$openExpired}) as expired_count", [$today])
+            ->selectRaw("SUM(CASE WHEN quotations.status IN ('draft','sent') AND NOT ({$openExpired}) THEN quotations.total ELSE 0 END) as pipeline_value", [$today])
+            // Open (not expired) for 30+ days without an outcome — follow-up needed
+            ->selectRaw("SUM(quotations.status IN ('draft','sent') AND NOT ({$openExpired}) AND DATE(quotations.created_at) < ?) as stale_count", [$today, $staleBefore])
+            ->groupBy('quotations.created_by')
+            ->get()
+            ->keyBy('seller_id');
+
+        // ── Orders created in the period ──
+        $orderStats = Order::query()
+            ->leftJoin('quotations', 'orders.quotation_id', '=', 'quotations.id')
             ->whereDate('orders.created_at', '>=', $from)
             ->whereDate('orders.created_at', '<=', $to)
-            ->join('users', 'orders.created_by', '=', 'users.id')
+            ->whereRaw("{$orderSeller} IS NOT NULL")
+            ->when($restricted, fn ($q) => $q->whereRaw("{$orderSeller} = ?", [$ownerId]))
             ->select(
-                'users.id',
-                'users.name',
-                DB::raw('COUNT(orders.id) as order_count'),
-                DB::raw('SUM(orders.total) as total_sales'),
-                DB::raw('AVG(orders.total) as avg_per_order'),
-                DB::raw('COUNT(DISTINCT orders.customer_id) as customer_count')
+                DB::raw("{$orderSeller} as seller_id"),
+                DB::raw("SUM(orders.status != 'cancelled') as order_count"),
+                DB::raw("SUM(CASE WHEN orders.status != 'cancelled' THEN orders.total ELSE 0 END) as total_sales"),
+                DB::raw("COUNT(DISTINCT CASE WHEN orders.status != 'cancelled' THEN orders.customer_id END) as customer_count"),
+                DB::raw("SUM(orders.status = 'completed') as completed_count"),
+                DB::raw("SUM(orders.status = 'cancelled') as cancelled_order_count"),
+                DB::raw("SUM(CASE WHEN orders.status = 'cancelled' THEN orders.total ELSE 0 END) as cancelled_order_value"),
+                DB::raw("SUM(CASE WHEN orders.status != 'cancelled' THEN orders.paid_amount ELSE 0 END) as paid_amount"),
+                DB::raw("SUM(CASE WHEN orders.status != 'cancelled' THEN orders.remaining_amount ELSE 0 END) as remaining_amount")
             )
-            ->groupBy('users.id', 'users.name')
-            ->orderByDesc('total_sales')
+            ->groupBy('seller_id')
+            ->get()
+            ->keyBy('seller_id');
+
+        // ── New customers registered by each seller ──
+        $newCustomers = Customer::query()
+            ->whereNotNull('created_by')
+            ->whereDate('created_at', '>=', $from)
+            ->whereDate('created_at', '<=', $to)
+            ->when($restricted, fn ($q) => $q->where('created_by', $ownerId))
+            ->select('created_by as seller_id', DB::raw('COUNT(*) as new_customers'))
+            ->groupBy('created_by')
+            ->pluck('new_customers', 'seller_id');
+
+        $sellerIds = $quoteStats->keys()
+            ->merge($orderStats->keys())
+            ->merge($newCustomers->keys())
+            ->unique()
+            ->values();
+        $names = User::whereIn('id', $sellerIds)->pluck('name', 'id');
+
+        $pct = fn ($num, $den) => $den > 0 ? round($num / $den * 100, 1) : null;
+
+        $sellers = $sellerIds->map(function ($id) use ($quoteStats, $orderStats, $newCustomers, $names, $pct) {
+            $q = $quoteStats->get($id);
+            $o = $orderStats->get($id);
+
+            $quoteCount = (int) ($q->quote_count ?? 0);
+            $approved = (int) ($q->approved_count ?? 0);
+            $rejected = (int) ($q->rejected_count ?? 0);
+            $cancelled = (int) ($q->cancelled_count ?? 0);
+            $expired = (int) ($q->expired_count ?? 0);
+            $stale = (int) ($q->stale_count ?? 0);
+            $quoteValue = (float) ($q->quote_value ?? 0);
+            $approvedValue = (float) ($q->approved_value ?? 0);
+            $orderCount = (int) ($o->order_count ?? 0);
+            $totalSales = (float) ($o->total_sales ?? 0);
+            $paid = (float) ($o->paid_amount ?? 0);
+
+            return [
+                'id' => (int) $id,
+                'name' => $names[$id] ?? ('#' . $id),
+                // Quotations
+                'quote_count' => $quoteCount,
+                'quote_value' => round($quoteValue, 2),
+                'avg_quote_value' => $quoteCount > 0 ? round($quoteValue / $quoteCount, 2) : 0,
+                'draft_count' => (int) ($q->draft_count ?? 0),
+                'sent_count' => (int) ($q->sent_count ?? 0),
+                'approved_count' => $approved,
+                'rejected_count' => $rejected,
+                'cancelled_count' => $cancelled,
+                'expired_count' => $expired,
+                'stale_count' => $stale,
+                'approved_value' => round($approvedValue, 2),
+                'lost_value' => round((float) ($q->lost_value ?? 0), 2),
+                'pipeline_value' => round((float) ($q->pipeline_value ?? 0), 2),
+                'quoted_customers' => (int) ($q->quoted_customers ?? 0),
+                'avg_revisions' => $q ? round((float) $q->avg_revisions, 1) : null,
+                'avg_days_to_approve' => $q && $q->avg_days_to_approve !== null ? round((float) $q->avg_days_to_approve, 1) : null,
+                // Rates (%) — win_rate counts only quotations with an outcome
+                'conversion_rate' => $pct($approved, $quoteCount),
+                'win_rate' => $pct($approved, $approved + $rejected + $cancelled + $expired),
+                'cancel_rate' => $pct($cancelled, $quoteCount),
+                'reject_rate' => $pct($rejected, $quoteCount),
+                'expired_rate' => $pct($expired, $quoteCount),
+                'stale_rate' => $pct($stale, $quoteCount),
+                'value_win_rate' => $pct($approvedValue, $quoteValue),
+                // Orders
+                'order_count' => $orderCount,
+                'total_sales' => round($totalSales, 2),
+                'avg_per_order' => $orderCount > 0 ? round($totalSales / $orderCount, 2) : 0,
+                'customer_count' => (int) ($o->customer_count ?? 0),
+                'completed_count' => (int) ($o->completed_count ?? 0),
+                'cancelled_order_count' => (int) ($o->cancelled_order_count ?? 0),
+                'cancelled_order_value' => round((float) ($o->cancelled_order_value ?? 0), 2),
+                'paid_amount' => round($paid, 2),
+                'remaining_amount' => round((float) ($o->remaining_amount ?? 0), 2),
+                'collection_rate' => $pct($paid, $totalSales),
+                'new_customers' => (int) ($newCustomers[$id] ?? 0),
+            ];
+        })
+            ->sortBy([['total_sales', 'desc'], ['quote_count', 'desc']])
+            ->values();
+
+        // ── Team totals ──
+        $sum = fn ($key) => $sellers->sum($key);
+        $tQuotes = $sum('quote_count');
+        $tApproved = $sum('approved_count');
+        $tDecided = $tApproved + $sum('rejected_count') + $sum('cancelled_count') + $sum('expired_count');
+        $tSales = $sum('total_sales');
+        $tOrders = $sum('order_count');
+        // Weighted by approved count so a seller with a single deal doesn't skew it
+        $withDays = $sellers->filter(fn ($s) => $s['avg_days_to_approve'] !== null);
+        $daysWeight = $withDays->sum('approved_count');
+        $summary = [
+            'seller_count' => $sellers->count(),
+            'quote_count' => $tQuotes,
+            'quote_value' => round($sum('quote_value'), 2),
+            'approved_count' => $tApproved,
+            'approved_value' => round($sum('approved_value'), 2),
+            'rejected_count' => $sum('rejected_count'),
+            'cancelled_count' => $sum('cancelled_count'),
+            'expired_count' => $sum('expired_count'),
+            'stale_count' => $sum('stale_count'),
+            'lost_value' => round($sum('lost_value'), 2),
+            'pipeline_value' => round($sum('pipeline_value'), 2),
+            'conversion_rate' => $pct($tApproved, $tQuotes),
+            'win_rate' => $pct($tApproved, $tDecided),
+            'cancel_rate' => $pct($sum('cancelled_count'), $tQuotes),
+            'reject_rate' => $pct($sum('rejected_count'), $tQuotes),
+            'expired_rate' => $pct($sum('expired_count'), $tQuotes),
+            'stale_rate' => $pct($sum('stale_count'), $tQuotes),
+            'value_win_rate' => $pct($sum('approved_value'), $sum('quote_value')),
+            'order_count' => $tOrders,
+            'total_sales' => round($tSales, 2),
+            'avg_per_order' => $tOrders > 0 ? round($tSales / $tOrders, 2) : 0,
+            'paid_amount' => round($sum('paid_amount'), 2),
+            'remaining_amount' => round($sum('remaining_amount'), 2),
+            'collection_rate' => $pct($sum('paid_amount'), $tSales),
+            'cancelled_order_count' => $sum('cancelled_order_count'),
+            'new_customers' => $sum('new_customers'),
+            'avg_days_to_approve' => $daysWeight > 0
+                ? round($withDays->sum(fn ($s) => $s['avg_days_to_approve'] * $s['approved_count']) / $daysWeight, 1)
+                : null,
+        ];
+
+        // ── Monthly trend per seller ──
+        $quoteTrend = Quotation::query()
+            ->whereNotNull('quotations.created_by')
+            ->whereDate('quotations.created_at', '>=', $from)
+            ->whereDate('quotations.created_at', '<=', $to)
+            ->when($restricted, fn ($q) => $q->where('quotations.created_by', $ownerId))
+            ->select(
+                'quotations.created_by as seller_id',
+                DB::raw("DATE_FORMAT(quotations.created_at, '%Y-%m') as month"),
+                DB::raw('COUNT(*) as quote_count'),
+                DB::raw("SUM(quotations.status = 'approved') as approved_count"),
+                DB::raw("SUM(quotations.status = 'cancelled') as cancelled_count")
+            )
+            ->groupBy('seller_id', 'month')
             ->get();
 
-        // Monthly trend per seller
-        $trend = Order::where('status', '!=', 'cancelled')
+        $salesTrend = Order::query()
+            ->leftJoin('quotations', 'orders.quotation_id', '=', 'quotations.id')
+            ->where('orders.status', '!=', 'cancelled')
             ->whereDate('orders.created_at', '>=', $from)
             ->whereDate('orders.created_at', '<=', $to)
-            ->join('users', 'orders.created_by', '=', 'users.id')
+            ->whereRaw("{$orderSeller} IS NOT NULL")
+            ->when($restricted, fn ($q) => $q->whereRaw("{$orderSeller} = ?", [$ownerId]))
             ->select(
-                'users.id as seller_id',
-                'users.name as seller_name',
+                DB::raw("{$orderSeller} as seller_id"),
                 DB::raw("DATE_FORMAT(orders.created_at, '%Y-%m') as month"),
+                DB::raw('COUNT(*) as order_count'),
                 DB::raw('SUM(orders.total) as total')
             )
-            ->groupBy('seller_id', 'seller_name', 'month')
-            ->orderBy('month')
+            ->groupBy('seller_id', 'month')
             ->get();
 
+        $trend = [];
+        $blank = fn ($sellerId, $month) => [
+            'seller_id' => (int) $sellerId,
+            'seller_name' => $names[$sellerId] ?? ('#' . $sellerId),
+            'month' => $month,
+            'quote_count' => 0,
+            'approved_count' => 0,
+            'cancelled_count' => 0,
+            'order_count' => 0,
+            'total' => 0.0,
+        ];
+        foreach ($quoteTrend as $r) {
+            $k = $r->seller_id . '|' . $r->month;
+            $trend[$k] = array_merge($blank($r->seller_id, $r->month), [
+                'quote_count' => (int) $r->quote_count,
+                'approved_count' => (int) $r->approved_count,
+                'cancelled_count' => (int) $r->cancelled_count,
+            ]);
+        }
+        foreach ($salesTrend as $r) {
+            $k = $r->seller_id . '|' . $r->month;
+            $trend[$k] ??= $blank($r->seller_id, $r->month);
+            $trend[$k]['order_count'] = (int) $r->order_count;
+            $trend[$k]['total'] = round((float) $r->total, 2);
+        }
+
         return response()->json([
+            'restricted' => $restricted,
             'sellers' => $sellers,
-            'trend' => $trend,
+            'summary' => $summary,
+            'trend' => collect($trend)->sortBy('month')->values(),
             'from' => $from,
             'to' => $to,
         ]);
