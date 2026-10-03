@@ -210,6 +210,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/reports/inactive-customers', [ReportController::class, 'inactiveCustomers']);
             Route::get('/reports/ar-aging', [ReportController::class, 'arAging']);
             Route::get('/reports/monthly-sales', [ReportController::class, 'monthlySales']);
+            Route::get('/reports/monthly-sales/orders', [ReportController::class, 'monthlySalesOrders']);
             Route::get('/reports/invoices', [ReportController::class, 'invoiceReport']);
             Route::get('/reports/sales-by-customer', [ReportController::class, 'salesByCustomer']);
             Route::get('/reports/sales-by-product', [ReportController::class, 'salesByProduct']);

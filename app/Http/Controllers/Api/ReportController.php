@@ -561,6 +561,26 @@ class ReportController extends Controller
     }
 
     /**
+     * Orders in a month (or whole year) — drill-down for monthly sales
+     */
+    public function monthlySalesOrders(Request $request): JsonResponse
+    {
+        $request->validate([
+            'year' => 'required|integer',
+            'month' => 'nullable|integer|between:1,12',
+        ]);
+
+        $orders = Order::where('status', '!=', 'cancelled')
+            ->whereYear('created_at', $request->input('year'))
+            ->when($request->filled('month'), fn ($q) => $q->whereMonth('created_at', $request->input('month')))
+            ->with(['customer:id,name,code', 'creator:id,name'])
+            ->orderBy('created_at')
+            ->get(['id', 'order_number', 'customer_id', 'status', 'delivery_status', 'total', 'paid_amount', 'remaining_amount', 'created_by', 'created_at']);
+
+        return response()->json(['orders' => $orders]);
+    }
+
+    /**
      * Invoice report
      */
     public function invoiceReport(Request $request): JsonResponse
