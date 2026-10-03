@@ -65,39 +65,82 @@
 <body>
 
 @php
-    // Number of item rows that fill an A4 page nicely (tuned so the items box
-    // reaches the totals area on the last page)
-    $rowsPerPage = 22;   // used for both prior pages and as the target fill for last page
-    $lastPageMax = 22;   // max items on the last page (leave room for totals + signature)
+    // Items print as multi-line cells (name / width / wire / length), so pages are
+    // split by estimated row height in "line units" instead of a fixed row count.
+    // A row costs its text lines plus ~0.4 line of cell padding (1 unit ≈ 6.7mm).
+    $rowUnits = function ($item) {
+        $lines = 1;
+        if ((float) ($item->thickness ?? 0) > 0) $lines++;
+        if (!empty($item->product?->steel_type)) $lines++;
+        if ((float) $item->length > 0) $lines++;
+        if ($item->description && $item->product && $item->description !== $item->product->name) $lines++;
+        return $lines + 0.4;
+    };
+    $pageBudget = 26;      // line units that fit on a page without totals
+    $lastPageBudget = 14;  // line units that fit on the page that also holds totals + signatures
+    $unitPx = 25;          // filler height per unused line unit on the last page
+
     $items = $invoice->items;
-    $total = $items->count();
-    if ($total <= $lastPageMax) {
-        $chunks = collect([$items]);
-    } else {
-        $lastCount = min($lastPageMax, $total);
-        $remaining = $total - $lastCount;
-        $priorPages = (int) ceil($remaining / $rowsPerPage);
-        $base = intdiv($remaining, $priorPages);
-        $extra = $remaining % $priorPages;
-        $chunks = collect();
-        $offset = 0;
-        for ($i = 0; $i < $priorPages; $i++) {
-            $size = $base + ($i < $extra ? 1 : 0);
-            $chunks->push($items->slice($offset, $size)->values());
-            $offset += $size;
+    $chunks = collect();
+    $current = collect();
+    $used = 0;
+    foreach ($items as $item) {
+        $w = $rowUnits($item);
+        if ($current->isNotEmpty() && $used + $w > $pageBudget) {
+            $chunks->push($current);
+            $current = collect();
+            $used = 0;
         }
-        $chunks->push($items->slice($offset, $lastCount)->values());
+        $current->push($item);
+        $used += $w;
     }
+    // The final page also carries totals + signatures — if its rows don't fit,
+    // move the trailing rows onto one more page.
+    if ($used > $lastPageBudget) {
+        $tail = collect();
+        $tailUsed = 0;
+        while ($current->count() > 1 && $tailUsed + $rowUnits($current->last()) <= $lastPageBudget) {
+            $tailUsed += $rowUnits($current->last());
+            $tail->prepend($current->pop());
+        }
+        $chunks->push($current);
+        $current = $tail;
+        $used = $tailUsed;
+    }
+
+    // Spread the rows of the earlier pages evenly so no page ends up with one stray row.
+    $pageCount = $chunks->count();
+    if ($pageCount > 1) {
+        $prefix = $chunks->flatten(1);
+        $remainingUnits = $prefix->sum($rowUnits);
+        $balanced = collect();
+        $page = collect();
+        $pageUsed = 0;
+        foreach ($prefix as $item) {
+            $w = $rowUnits($item);
+            $pagesLeft = $pageCount - $balanced->count();
+            $target = $remainingUnits / $pagesLeft;
+            if ($page->isNotEmpty() && $pagesLeft > 1 && $pageUsed + $w / 2 > $target) {
+                $balanced->push($page);
+                $remainingUnits -= $pageUsed;
+                $page = collect();
+                $pageUsed = 0;
+            }
+            $page->push($item);
+            $pageUsed += $w;
+        }
+        $balanced->push($page);
+        if ($balanced->count() === $pageCount && $balanced->every(fn ($c) => $c->sum($rowUnits) <= $pageBudget)) {
+            $chunks = $balanced;
+        }
+    }
+    $chunks->push($current);
+    $lastPageUnits = $used;
     $totalPages = max(1, $chunks->count());
     $loopIndex = 1;
 
     // Net (before VAT) — subtotal minus discount
     $netAfterDiscount = (float) $invoice->subtotal - (float) $invoice->discount_amount;
-
-    // Blank filler rows for LAST page so the items box always reaches the totals
-    $lastChunkCount = $chunks->last()->count();
-    $fillerRowsLast = max(0, $lastPageMax - $lastChunkCount);
-    $fillerRowsOther = 0; // don't fill middle pages
 @endphp
 
 @foreach($chunks as $chunkIndex => $chunk)
@@ -197,13 +240,22 @@
                     <td class="text-center">{{ $loopIndex++ }}</td>
                     <td class="text-center">{{ number_format((float)$item->quantity, 2) }}</td>
                     <td class="text-center">{{ $rawUnit }}</td>
+                    {{-- Same layout as the quotation: name (price/unit), then width / wire / length lines --}}
                     <td>
-                        {{ $item->product->name ?? $item->description }}
-                        @if((float)$item->length > 0)
-                            &nbsp;&nbsp;ยาว {{ number_format((float)$item->length, 2) }} {{ $displayLengthUnit ?: '' }}
+                        <b>{{ $item->product->name ?? $item->description }}</b>
+                        @if($totalArea !== null)
+                            ({{ number_format((float)$item->unit_price, 2) }}/ตรม.)
+                        @elseif($displayLengthUnit)
+                            ({{ number_format((float)$item->unit_price, 2) }}/{{ $displayLengthUnit }})
                         @endif
                         @if($thickness > 0)
-                            &nbsp;&nbsp;กว้าง {{ number_format($thickness, 2) }}@if($item->product?->thickness_unit) {{ $item->product->thickness_unit }}@endif
+                            <br>ความกว้าง: {{ number_format($thickness, 2) }}@if($item->product?->thickness_unit) {{ $item->product->thickness_unit }}@endif
+                        @endif
+                        @if(!empty($item->product?->steel_type))
+                            <br>ลวด: {{ $item->product->steel_type }}
+                        @endif
+                        @if((float)$item->length > 0)
+                            <br>ความยาว: {{ number_format((float)$item->length, 2) }} {{ $displayLengthUnit ?: '' }}
                         @endif
                         @if($item->description && $item->product && $item->description !== $item->product->name)
                             <br><span class="fs-9">{{ $item->description }}</span>
@@ -225,14 +277,7 @@
                  Column dividers stay visible because we emit 6 separate <td>s (no colspan). --}}
             @if($chunkIndex === $totalPages - 1)
                 @php
-                    // A4 usable = 806pt (297mm - 5mm top - 8mm bottom margins).
-                    // Header/totals/signature text grew ~1.5x when the fs-* classes were
-                    // bumped up for Angsana New, so both constants below are scaled from
-                    // the old (9pt items / 545pt available) tuning to match.
-                    $itemRowH = 47;
-                    $availItems = 508;
-                    $itemsHeightEst = $chunk->count() * $itemRowH;
-                    $fillerHeight = max(0, $availItems - $itemsHeightEst);
+                    $fillerHeight = (int) max(0, ($lastPageBudget - $lastPageUnits) * $unitPx);
                 @endphp
                 @if($fillerHeight > 0)
                     <tr>
