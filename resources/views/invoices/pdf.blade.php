@@ -219,11 +219,11 @@
         <thead>
             <tr>
                 <th width="6%">ลำดับ</th>
-                <th width="10%">จำนวน</th>
-                <th width="10%">หน่วยนับ</th>
+                <th width="8%">จำนวน</th>
+                <th width="9%" style="white-space: nowrap;">หน่วยนับ</th>
                 <th>รายการสินค้า</th>
-                <th width="17%">ราคาต่อหน่วย</th>
-                <th width="18%">จำนวนเงิน</th>
+                <th width="15%">ราคาต่อหน่วย</th>
+                <th width="15%">จำนวนเงิน</th>
             </tr>
         </thead>
         <tbody>
@@ -246,18 +246,11 @@
                     <td class="text-center">{{ $loopIndex++ }}</td>
                     <td class="text-center">{{ number_format((float)$item->quantity, 2) }}</td>
                     <td class="text-center">{{ $rawUnit }}</td>
-                    {{-- Slabs: one line "name (price/ตรม.) กว้าง ยาว ลวด".
+                    {{-- Slabs: "name กว้าง ยาว ลวด" on line 1, "price/ตรม." on line 2.
                          Others: name (price/unit), then width / wire / length lines. --}}
                     <td>
                         <b>{{ $item->product->name ?? $item->description }}</b>
-                        @if($totalArea !== null)
-                            ({{ number_format((float)$item->unit_price, 2) }}/ตรม.)
-                        @elseif($displayLengthUnit)
-                            ({{ number_format((float)$item->unit_price, 2) }}/{{ $displayLengthUnit }})
-                        @endif
                         @if($isSheet)
-                            {{-- The full line is wider than the column and mPDF wraps mid-number,
-                                 so break deliberately: details go on the second line. --}}
                             @php
                                 $parts = [];
                                 if ($thickness > 0) $parts[] = 'กว้าง: ' . number_format($thickness, 2) . ($item->product?->thickness_unit ? ' ' . $item->product->thickness_unit : '');
@@ -265,9 +258,13 @@
                                 if (!empty($item->product?->steel_type)) $parts[] = 'ลวด: ' . $item->product->steel_type;
                             @endphp
                             @if($parts)
-                                <br>{!! implode(' &nbsp;', array_map('e', $parts)) !!}
+                                {!! implode(' &nbsp;', array_map('e', $parts)) !!}
                             @endif
+                            <br>{{ number_format((float)$item->unit_price, 2) }}/{{ $totalArea !== null ? 'ตรม.' : ($displayLengthUnit ?: $rawUnit) }}
                         @else
+                        @if($displayLengthUnit)
+                            ({{ number_format((float)$item->unit_price, 2) }}/{{ $displayLengthUnit }})
+                        @endif
                         @if($thickness > 0)
                             <br>ความกว้าง: {{ number_format($thickness, 2) }}@if($item->product?->thickness_unit) {{ $item->product->thickness_unit }}@endif
                         @endif
