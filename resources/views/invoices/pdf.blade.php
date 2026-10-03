@@ -69,10 +69,16 @@
     // split by estimated row height in "line units" instead of a fixed row count.
     // A row costs its text lines plus ~0.4 line of cell padding (1 unit ≈ 6.7mm).
     $rowUnits = function ($item) {
-        $lines = 1;
-        if ((float) ($item->thickness ?? 0) > 0) $lines++;
-        if (!empty($item->product?->steel_type)) $lines++;
-        if ((float) $item->length > 0) $lines++;
+        $isSheet = trim((string) ($item->unit ?? '')) === 'แผ่น' || trim((string) ($item->product->unit ?? '')) === 'แผ่น';
+        if ($isSheet) {
+            // Slab: name + price on line 1, "กว้าง ยาว ลวด" on line 2.
+            $lines = 2;
+        } else {
+            $lines = 1;
+            if ((float) ($item->thickness ?? 0) > 0) $lines++;
+            if (!empty($item->product?->steel_type)) $lines++;
+            if ((float) $item->length > 0) $lines++;
+        }
         if ($item->description && $item->product && $item->description !== $item->product->name) $lines++;
         return $lines + 0.4;
     };
@@ -240,7 +246,8 @@
                     <td class="text-center">{{ $loopIndex++ }}</td>
                     <td class="text-center">{{ number_format((float)$item->quantity, 2) }}</td>
                     <td class="text-center">{{ $rawUnit }}</td>
-                    {{-- Same layout as the quotation: name (price/unit), then width / wire / length lines --}}
+                    {{-- Slabs: one line "name (price/ตรม.) กว้าง ยาว ลวด".
+                         Others: name (price/unit), then width / wire / length lines. --}}
                     <td>
                         <b>{{ $item->product->name ?? $item->description }}</b>
                         @if($totalArea !== null)
@@ -248,6 +255,19 @@
                         @elseif($displayLengthUnit)
                             ({{ number_format((float)$item->unit_price, 2) }}/{{ $displayLengthUnit }})
                         @endif
+                        @if($isSheet)
+                            {{-- The full line is wider than the column and mPDF wraps mid-number,
+                                 so break deliberately: details go on the second line. --}}
+                            @php
+                                $parts = [];
+                                if ($thickness > 0) $parts[] = 'กว้าง: ' . number_format($thickness, 2) . ($item->product?->thickness_unit ? ' ' . $item->product->thickness_unit : '');
+                                if ((float)$item->length > 0) $parts[] = 'ยาว: ' . number_format((float)$item->length, 2) . ($displayLengthUnit ? ' ' . $displayLengthUnit : '');
+                                if (!empty($item->product?->steel_type)) $parts[] = 'ลวด: ' . $item->product->steel_type;
+                            @endphp
+                            @if($parts)
+                                <br>{!! implode(' &nbsp;', array_map('e', $parts)) !!}
+                            @endif
+                        @else
                         @if($thickness > 0)
                             <br>ความกว้าง: {{ number_format($thickness, 2) }}@if($item->product?->thickness_unit) {{ $item->product->thickness_unit }}@endif
                         @endif
@@ -256,6 +276,7 @@
                         @endif
                         @if((float)$item->length > 0)
                             <br>ความยาว: {{ number_format((float)$item->length, 2) }} {{ $displayLengthUnit ?: '' }}
+                        @endif
                         @endif
                         @if($item->description && $item->product && $item->description !== $item->product->name)
                             <br><span class="fs-9">{{ $item->description }}</span>
